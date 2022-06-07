@@ -47,12 +47,16 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/ecdh.h>
 #include <mbedtls/ecdsa.h>
-#include <mbedtls/ecp.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
 #include <mbedtls/md.h>
+// Includes for SPAKE2+ (not supported through PSA API yet)
 #include <mbedtls/bignum.h>
+#include <mbedtls/ecp.h>
+#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC))
 #include <mbedtls/pkcs5.h>
+#endif
+
 // Includes for SHA when not using PSA
 #if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1))
 #include <mbedtls/sha1.h>
@@ -657,6 +661,7 @@ CHIP_ERROR HMAC_sha::HMAC_SHA256(const uint8_t * key, size_t key_length, const u
     VerifyOrReturnError(out_length >= kSHA256_Hash_Length, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
+#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC))
     const mbedtls_md_info_t * const md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     VerifyOrReturnError(md != nullptr, CHIP_ERROR_INTERNAL);
 
@@ -667,11 +672,54 @@ CHIP_ERROR HMAC_sha::HMAC_SHA256(const uint8_t * key, size_t key_length, const u
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
 
     return CHIP_NO_ERROR;
+#else
+    CHIP_ERROR error = CHIP_NO_ERROR;
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    mbedtls_svc_key_id_t key_id = 0;
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_mac_operation_t operation = PSA_MAC_OPERATION_INIT;
+    size_t output_length = 0;
+
+    psa_crypto_init();
+
+    psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attr, key_length * 8);
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_HASH);
+    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+    status = psa_import_key(&attr,
+                            Uint8::to_const_uchar(key),
+                            key_length,
+                            &key_id);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    // TODO: switch to one-shot psa_mac_compute when available
+    status = psa_mac_sign_setup(&operation,
+                                key_id,
+                                PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    status = psa_mac_update(&operation, Uint8::to_const_uchar(message), message_length);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    status = psa_mac_sign_finish(&operation, out_buffer, out_length, &output_length);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+    VerifyOrExit(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), error = CHIP_ERROR_INTERNAL);
+exit:
+    psa_mac_abort(&operation);
+    psa_destroy_key(key_id);
+    return error;
+#endif
 }
 
 CHIP_ERROR PBKDF2_sha256::pbkdf2_sha256(const uint8_t * password, size_t plen, const uint8_t * salt, size_t slen,
                                         unsigned int iteration_count, uint32_t key_length, uint8_t * output)
 {
+#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC) )
     CHIP_ERROR error = CHIP_NO_ERROR;
     int result       = 0;
     const mbedtls_md_info_t * md_info;
@@ -711,6 +759,118 @@ exit:
     }
 
     return error;
+#else
+    // TODO: replace inlined algorithm with usage of the PSA key derivation API once implemented
+    CHIP_ERROR error = CHIP_NO_ERROR;
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    mbedtls_svc_key_id_t key_id = 0;
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_mac_operation_t operation = PSA_MAC_OPERATION_INIT;
+    size_t output_length = 0;
+    unsigned char md1[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    unsigned char work[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    size_t use_len;
+    unsigned char *out_p = output;
+    unsigned char counter[4] = { 0 };
+
+    VerifyOrExit(password != nullptr, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(plen > 0, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(salt != nullptr, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(slen >= kSpake2p_Min_PBKDF_Salt_Length, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(slen <= kSpake2p_Max_PBKDF_Salt_Length, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(key_length > 0, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(output != nullptr, error = CHIP_ERROR_INVALID_ARGUMENT);
+
+    psa_crypto_init();
+
+    psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attr, plen * 8);
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_HASH);
+    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+    status = psa_import_key(&attr,
+                            Uint8::to_const_uchar(password),
+                            plen,
+                            &key_id);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    // Start with initializing the counter
+    counter[3] = 1;
+
+    // Loop until we have generated the requested key length
+    while (key_length)
+    {
+        // U1 ends up in work
+        status = psa_mac_sign_setup(&operation,
+                                    key_id,
+                                    PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+        VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+        status = psa_mac_update(&operation, salt, slen);
+
+        VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+        status = psa_mac_update(&operation, counter, 4);
+
+        VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+        status = psa_mac_sign_finish(&operation, work, sizeof(work), &output_length);
+
+        VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+        VerifyOrExit(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), error = CHIP_ERROR_INTERNAL);
+
+        memcpy(md1, work, PSA_HASH_LENGTH(PSA_ALG_SHA_256));
+
+        for (size_t i = 1; i < iteration_count; i++)
+        {
+            // U2 ends up in md1
+            //
+            status = psa_mac_sign_setup(&operation,
+                                        key_id,
+                                        PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+            VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+            status = psa_mac_update(&operation, md1, PSA_HASH_LENGTH(PSA_ALG_SHA_256));
+
+            VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+            status = psa_mac_sign_finish(&operation, md1, sizeof(md1), &output_length);
+
+            VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+            VerifyOrExit(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), error = CHIP_ERROR_INTERNAL);
+
+            // U1 xor U2
+            //
+            for (size_t j = 0; j < PSA_HASH_LENGTH(PSA_ALG_SHA_256); j++)
+            {
+                work[j] ^= md1[j];
+            }
+        }
+
+        use_len = (key_length < PSA_HASH_LENGTH(PSA_ALG_SHA_256)) ? key_length : PSA_HASH_LENGTH(PSA_ALG_SHA_256);
+        memcpy(out_p, work, use_len);
+
+        key_length -= (uint32_t) use_len;
+        out_p += use_len;
+
+        for (size_t i = 4; i > 0; i--)
+        {
+            if (++counter[i - 1] != 0)
+            {
+                break;
+            }
+        }
+    }
+
+
+exit:
+    psa_mac_abort(&operation);
+    psa_destroy_key(key_id);
+    return error;
+#endif
 }
 
 static EntropyContext * get_entropy_context()

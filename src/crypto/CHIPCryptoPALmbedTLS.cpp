@@ -44,18 +44,22 @@
 #endif
 #endif
 
+// Includes for the DRBG when not using PSA
+#if !defined(MBEDTLS_PSA_CRYPTO_C)
 #include <mbedtls/ctr_drbg.h>
-#include <mbedtls/ecdh.h>
-#include <mbedtls/ecdsa.h>
 #include <mbedtls/entropy.h>
-#include <mbedtls/error.h>
-#include <mbedtls/md.h>
+#endif
+
 // Includes for SPAKE2+ (not supported through PSA API yet)
 #include <mbedtls/bignum.h>
 #include <mbedtls/ecp.h>
 #if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC))
 #include <mbedtls/pkcs5.h>
 #endif
+
+// TODO: remove when ECDSA & ECDH converted to PSA
+#include <mbedtls/ecdh.h>
+#include <mbedtls/ecdsa.h>
 
 // Includes for SHA when not using PSA
 #if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1))
@@ -70,13 +74,16 @@
 #include <mbedtls/hkdf.h>
 #endif
 
+// Includes for X.509 handling (not part of the PSA scope)
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
 #include <mbedtls/x509_crt.h>
 #endif // defined(MBEDTLS_X509_CRT_PARSE_C)
+#include <mbedtls/md.h>
 #include <mbedtls/oid.h>
 #include <mbedtls/x509.h>
 #include <mbedtls/x509_csr.h>
 
+#include <mbedtls/error.h>
 #include <lib/core/CHIPSafeCasts.h>
 #include <lib/support/BufferWriter.h>
 #include <lib/support/BytesToHex.h>
@@ -107,6 +114,7 @@ namespace Crypto {
 #define CHIP_CRYPTO_PAL_PRIVATE_X509(x) x
 #endif
 
+#if !defined(MBEDTLS_PSA_CRYPTO_C)
 typedef struct
 {
     bool mInitialized;
@@ -116,6 +124,7 @@ typedef struct
 } EntropyContext;
 
 static EntropyContext gsEntropyContext;
+#endif
 
 static void _log_mbedTLS_error(int error_code)
 {
@@ -873,6 +882,7 @@ exit:
 #endif
 }
 
+#if !defined(MBEDTLS_PSA_CRYPTO_C)
 static EntropyContext * get_entropy_context()
 {
     if (!gsEntropyContext.mInitialized)
@@ -906,9 +916,11 @@ static mbedtls_ctr_drbg_context * get_drbg_context()
 
     return drbgCtxt;
 }
+#endif
 
 CHIP_ERROR add_entropy_source(entropy_source fn_source, void * p_source, size_t threshold)
 {
+#if !defined(MBEDTLS_PSA_CRYPTO_C)
     VerifyOrReturnError(fn_source != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
     EntropyContext * const entropy_ctxt = get_entropy_context();
@@ -918,6 +930,13 @@ CHIP_ERROR add_entropy_source(entropy_source fn_source, void * p_source, size_t 
         mbedtls_entropy_add_source(&entropy_ctxt->mEntropy, fn_source, p_source, threshold, MBEDTLS_ENTROPY_SOURCE_STRONG);
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
     return CHIP_NO_ERROR;
+#else
+    // PSA manages its own entropy sources
+    (void) fn_source;
+    (void) p_source;
+    (void) threshold;
+    return CHIP_NO_ERROR;
+#endif
 }
 
 CHIP_ERROR DRBG_get_bytes(uint8_t * out_buffer, const size_t out_length)
@@ -925,12 +944,17 @@ CHIP_ERROR DRBG_get_bytes(uint8_t * out_buffer, const size_t out_length)
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_length > 0, CHIP_ERROR_INVALID_ARGUMENT);
 
+#if !defined(MBEDTLS_PSA_CRYPTO_C)
     mbedtls_ctr_drbg_context * const drbg_ctxt = get_drbg_context();
     VerifyOrReturnError(drbg_ctxt != nullptr, CHIP_ERROR_INTERNAL);
 
     const int result = mbedtls_ctr_drbg_random(drbg_ctxt, Uint8::to_uchar(out_buffer), out_length);
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
-
+#else
+    psa_crypto_init();
+    const psa_status_t result = psa_generate_random(Uint8::to_uchar(out_buffer), out_length);
+    VerifyOrReturnError(result == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+#endif
     return CHIP_NO_ERROR;
 }
 

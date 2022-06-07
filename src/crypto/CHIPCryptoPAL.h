@@ -676,7 +676,7 @@ CHIP_ERROR Hash_SHA1(const uint8_t * data, size_t data_length, uint8_t * out_buf
  *        All implementations must check for std::is_trivially_copyable.
  **/
 
-struct alignas(size_t) HashSHA256OpaqueContext
+struct alignas(uint64_t) HashSHA256OpaqueContext
 {
     uint8_t mOpaque[kMAX_Hash_SHA256_Context_Size];
 };

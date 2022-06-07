@@ -33,6 +33,11 @@ static NSString * const kOperationalCredentialsIPK = @"ChipToolOpCredsIPK";
     return _mKeyPair.Initialize() == CHIP_NO_ERROR;
 }
 
+- (CHIP_ERROR)Import:(chip::Crypto::P256ImportableKeypair &)input
+{
+    return _mKeyPair.Import(input);
+}
+
 - (NSData *)ECDSA_sign_message_raw:(NSData *)message
 {
     chip::Crypto::P256ECDSASignature signature;

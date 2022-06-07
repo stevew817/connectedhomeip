@@ -361,25 +361,50 @@ struct alignas(size_t) P256KeypairContext
     uint8_t mBytes[kMAX_P256Keypair_Context_Size];
 };
 
+typedef CapacityBoundBuffer<kP256_PublicKey_Length + kP256_PrivateKey_Length> P256ImportableKeypair;
 typedef CapacityBoundBuffer<kP256_PublicKey_Length + kP256_PrivateKey_Length> P256SerializedKeypair;
 
 class P256KeypairBase : public ECPKeypair<P256PublicKey, P256ECDHDerivedSecret, P256ECDSASignature>
 {
 public:
     /**
-     * @brief Initialize the keypair.
+     * @brief Initialize (generate) a new keypair.
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     virtual CHIP_ERROR Initialize() = 0;
 
     /**
+     * @brief Import a keypair.
+     *
+     * Initialises the keypair object to the private key represented by
+     * the \p input.
+     * The input format is raw bytes, starting with the uncompressed
+     * public key in export format (0x04 || x || y), concatenated with
+     * the raw private key d value (32 bytes).
+     *
+     * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
+     **/
+    virtual CHIP_ERROR Import(P256ImportableKeypair & input) = 0;
+
+    /**
      * @brief Serialize the keypair.
+     *
+     * The serialised format is implementation-defined. The only
+     * guarantee is that a key serialised by an implementation on a
+     * specific device can be reconstructed by passing the serialised
+     * form to the Deserialize function on the same device.
+     *
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     virtual CHIP_ERROR Serialize(P256SerializedKeypair & output) const = 0;
 
     /**
      * @brief Deserialize the keypair.
+     *
+     * The serialised format is implementation-defined. No assumptions
+     * can be made on the format of the serialized keypair.
+     * To import a private key from its raw bytes, use the import function.
+     *
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     virtual CHIP_ERROR Deserialize(P256SerializedKeypair & input) = 0;
@@ -392,19 +417,43 @@ public:
     ~P256Keypair() override;
 
     /**
-     * @brief Initialize the keypair.
+     * @brief Initialize (generate) a new keypair.
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     CHIP_ERROR Initialize() override;
 
     /**
+     * @brief Import a keypair.
+     *
+     * Initialises the keypair object to the private key represented by
+     * the \p input.
+     * The input format is raw bytes, starting with the uncompressed
+     * public key in export format (0x04 || x || y), concatenated with
+     * the raw private key d value (32 bytes).
+     *
+     * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
+     **/
+    CHIP_ERROR Import(P256ImportableKeypair & input) override;
+
+    /**
      * @brief Serialize the keypair.
+     *
+     * The serialised format is implementation-defined. The only
+     * guarantee is that a key serialised by an implementation on a
+     * specific device can be reconstructed by passing the serialised
+     * form to the Deserialize function on the same device.
+     *
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     CHIP_ERROR Serialize(P256SerializedKeypair & output) const override;
 
     /**
      * @brief Deserialize the keypair.
+     *
+     * The serialised format is implementation-defined. No assumptions
+     * can be made on the format of the serialized keypair.
+     * To import a private key from its raw bytes, use the import function.
+     *
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     CHIP_ERROR Deserialize(P256SerializedKeypair & input) override;

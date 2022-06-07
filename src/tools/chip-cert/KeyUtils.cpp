@@ -66,7 +66,7 @@ KeyFormat DetectKeyFormat(const uint8_t * key, uint32_t keyLen)
     return kKeyFormat_X509_DER;
 }
 
-bool DeserializeKeyPair(const uint8_t * keyPair, uint32_t keyPairLen, EVP_PKEY * key)
+bool ImportKeyPair(const uint8_t * keyPair, uint32_t keyPairLen, EVP_PKEY * key)
 {
     bool res                = true;
     int result              = 0;
@@ -105,14 +105,14 @@ exit:
 
 } // namespace
 
-bool SerializeKeyPair(EVP_PKEY * key, P256SerializedKeypair & serializedKeypair)
+bool ExportKeyPair(EVP_PKEY * key, P256ImportableKeypair & importableKeypair)
 {
     bool res                 = true;
     const BIGNUM * privKeyBN = nullptr;
     const EC_GROUP * group   = nullptr;
     const EC_KEY * ecKey     = nullptr;
     const EC_POINT * ecPoint = nullptr;
-    uint8_t * pubKey         = serializedKeypair.Bytes();
+    uint8_t * pubKey         = importableKeypair.Bytes();
     uint8_t * privKey        = pubKey + kP256_PublicKey_Length;
     size_t pubKeyLen         = 0;
     int privKeyLen           = 0;
@@ -136,7 +136,7 @@ bool SerializeKeyPair(EVP_PKEY * key, P256SerializedKeypair & serializedKeypair)
     privKeyLen = BN_bn2binpad(privKeyBN, privKey, kP256_PrivateKey_Length);
     VerifyOrExit(privKeyLen == kP256_PrivateKey_Length, res = false);
 
-    serializedKeypair.SetLength(kP256_PublicKey_Length + kP256_PrivateKey_Length);
+    importableKeypair.SetLength(kP256_PublicKey_Length + kP256_PrivateKey_Length);
 
 exit:
     return res;
@@ -169,7 +169,7 @@ bool ReadKey(const char * fileName, EVP_PKEY * key, bool ignorErrorIfUnsupported
 
     if (keyFormat == kKeyFormat_Chip_Raw)
     {
-        res = DeserializeKeyPair(keyData.get(), keyDataLen, key);
+        res = ImportKeyPair(keyData.get(), keyDataLen, key);
         VerifyTrueOrExit(res);
     }
     else
@@ -266,8 +266,8 @@ bool WritePrivateKey(const char * fileName, EVP_PKEY * key, KeyFormat keyFmt)
     FILE * file            = nullptr;
     uint8_t * keyToWrite   = nullptr;
     uint32_t keyToWriteLen = 0;
-    P256SerializedKeypair serializedKeypair;
-    uint32_t chipKeySize       = serializedKeypair.Capacity();
+    P256ImportableKeypair importableKeypair;
+    uint32_t chipKeySize       = importableKeypair.Capacity();
     uint32_t chipKeyBase64Size = BASE64_ENCODED_LEN(chipKeySize);
     std::unique_ptr<uint8_t[]> chipKey(new uint8_t[chipKeySize]);
     std::unique_ptr<uint8_t[]> chipKeyBase64(new uint8_t[chipKeyBase64Size]);
@@ -299,14 +299,14 @@ bool WritePrivateKey(const char * fileName, EVP_PKEY * key, KeyFormat keyFmt)
         break;
     case kKeyFormat_Chip_Raw:
     case kKeyFormat_Chip_Base64:
-        res = SerializeKeyPair(key, serializedKeypair);
+        res = ExportKeyPair(key, importableKeypair);
         VerifyTrueOrExit(res);
 
         if (keyFmt == kKeyFormat_Chip_Base64)
         {
             uint32_t chipKeyBase64Len;
 
-            res = Base64Encode(serializedKeypair.Bytes(), static_cast<uint32_t>(serializedKeypair.Length()), chipKeyBase64.get(),
+            res = Base64Encode(importableKeypair.Bytes(), static_cast<uint32_t>(importableKeypair.Length()), chipKeyBase64.get(),
                                chipKeyBase64Size, chipKeyBase64Len);
             VerifyTrueOrExit(res);
 
@@ -315,8 +315,8 @@ bool WritePrivateKey(const char * fileName, EVP_PKEY * key, KeyFormat keyFmt)
         }
         else
         {
-            keyToWrite    = serializedKeypair.Bytes();
-            keyToWriteLen = static_cast<uint32_t>(serializedKeypair.Length());
+            keyToWrite    = importableKeypair.Bytes();
+            keyToWriteLen = static_cast<uint32_t>(importableKeypair.Length());
         }
 
         if (fwrite(keyToWrite, 1, keyToWriteLen, file) != keyToWriteLen)

@@ -26,6 +26,11 @@ CHIP_ERROR CHIPP256KeypairNativeBridge::Initialize()
     return mKeypairBase.Initialize();
 }
 
+CHIP_ERROR CHIPP256KeypairNativeBridge::Import(P256ImportableKeypair & output) const
+{
+    return mKeypairBase.Import(output);
+}
+
 CHIP_ERROR CHIPP256KeypairNativeBridge::Serialize(P256SerializedKeypair & output) const
 {
     return mKeypairBase.Serialize(output);

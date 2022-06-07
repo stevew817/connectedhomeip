@@ -133,16 +133,16 @@ CHIP_ERROR InitCredentialSets()
 
     FabricInfo commissionerFabric;
 
-    P256SerializedKeypair opKeysSerialized;
+    P256ImportableKeypair opKeysToImport;
     // TODO: Rename gCommissioner* to gInitiator*
-    memcpy((uint8_t *) (opKeysSerialized), sTestCert_Node01_02_PublicKey, sTestCert_Node01_02_PublicKey_Len);
-    memcpy((uint8_t *) (opKeysSerialized) + sTestCert_Node01_02_PublicKey_Len, sTestCert_Node01_02_PrivateKey,
+    memcpy((uint8_t *) (opKeysToImport), sTestCert_Node01_02_PublicKey, sTestCert_Node01_02_PublicKey_Len);
+    memcpy((uint8_t *) (opKeysToImport) + sTestCert_Node01_02_PublicKey_Len, sTestCert_Node01_02_PrivateKey,
            sTestCert_Node01_02_PrivateKey_Len);
 
-    ReturnErrorOnFailure(opKeysSerialized.SetLength(sTestCert_Node01_02_PublicKey_Len + sTestCert_Node01_02_PrivateKey_Len));
+    ReturnErrorOnFailure(opKeysToImport.SetLength(sTestCert_Node01_02_PublicKey_Len + sTestCert_Node01_02_PrivateKey_Len));
 
     P256Keypair opKey;
-    ReturnErrorOnFailure(opKey.Deserialize(opKeysSerialized));
+    ReturnErrorOnFailure(opKey.Import(opKeysToImport));
     ReturnErrorOnFailure(commissionerFabric.SetOperationalKeypair(&opKey));
 
     ReturnErrorOnFailure(commissionerFabric.SetRootCert(ByteSpan(sTestCert_Root01_Chip, sTestCert_Root01_Chip_Len)));
@@ -160,13 +160,13 @@ CHIP_ERROR InitCredentialSets()
     ReturnErrorOnFailure(gDeviceGroupDataProvider.Init());
     FabricInfo deviceFabric;
 
-    memcpy((uint8_t *) (opKeysSerialized), sTestCert_Node01_01_PublicKey, sTestCert_Node01_01_PublicKey_Len);
-    memcpy((uint8_t *) (opKeysSerialized) + sTestCert_Node01_01_PublicKey_Len, sTestCert_Node01_01_PrivateKey,
+    memcpy((uint8_t *) (opKeysToImport), sTestCert_Node01_01_PublicKey, sTestCert_Node01_01_PublicKey_Len);
+    memcpy((uint8_t *) (opKeysToImport) + sTestCert_Node01_01_PublicKey_Len, sTestCert_Node01_01_PrivateKey,
            sTestCert_Node01_01_PrivateKey_Len);
 
-    ReturnErrorOnFailure(opKeysSerialized.SetLength(sTestCert_Node01_01_PublicKey_Len + sTestCert_Node01_01_PrivateKey_Len));
+    ReturnErrorOnFailure(opKeysToImport.SetLength(sTestCert_Node01_01_PublicKey_Len + sTestCert_Node01_01_PrivateKey_Len));
 
-    ReturnErrorOnFailure(opKey.Deserialize(opKeysSerialized));
+    ReturnErrorOnFailure(opKey.Import(opKeysToImport));
     ReturnErrorOnFailure(deviceFabric.SetOperationalKeypair(&opKey));
 
     ReturnErrorOnFailure(deviceFabric.SetRootCert(ByteSpan(sTestCert_Root01_Chip, sTestCert_Root01_Chip_Len)));

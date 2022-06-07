@@ -987,6 +987,14 @@ exit:
     return error;
 }
 
+CHIP_ERROR P256Keypair::Import(P256ImportableKeypair & input)
+{
+    P256SerializedKeypair & input_casted = static_cast<P256SerializedKeypair &>(input);
+    static_assert(std::is_same<decltype(&input), decltype(&input_casted)>());
+
+    return Deserialize(input_casted);
+}
+
 CHIP_ERROR P256Keypair::Serialize(P256SerializedKeypair & output) const
 {
     CHIP_ERROR error = CHIP_NO_ERROR;

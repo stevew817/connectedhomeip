@@ -121,6 +121,14 @@ CHIP_ERROR P256KeypairHSM::Initialize()
     return CHIP_NO_ERROR;
 }
 
+CHIP_ERROR P256KeypairHSM::Import(P256ImportableKeypair & input)
+{
+    P256SerializedKeypair & input_casted = static_cast<P256SerializedKeypair &>(input);
+    static_assert(std::is_same<decltype(&input), decltype(&input_casted)>());
+
+    return Deserialize(input_casted);
+}
+
 CHIP_ERROR P256KeypairHSM::ECDSA_sign_msg(const uint8_t * msg, size_t msg_length, P256ECDSASignature & out_signature) const
 {
     CHIP_ERROR error                  = CHIP_ERROR_INTERNAL;

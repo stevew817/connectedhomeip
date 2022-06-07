@@ -32,11 +32,11 @@ static constexpr uint32_t kDACPublicKeySize  = 65;
 
 CHIP_ERROR LoadKeypairFromRaw(ByteSpan privateKey, ByteSpan publicKey, Crypto::P256Keypair & keypair)
 {
-    Crypto::P256SerializedKeypair serializedKeypair;
-    ReturnErrorOnFailure(serializedKeypair.SetLength(privateKey.size() + publicKey.size()));
-    memcpy(serializedKeypair.Bytes(), publicKey.data(), publicKey.size());
-    memcpy(serializedKeypair.Bytes() + publicKey.size(), privateKey.data(), privateKey.size());
-    return keypair.Deserialize(serializedKeypair);
+    Crypto::P256ImportableKeypair raw_keypair;
+    ReturnErrorOnFailure(raw_keypair.SetLength(private_key.size() + public_key.size()));
+    memcpy(raw_keypair.Bytes(), public_key.data(), public_key.size());
+    memcpy(raw_keypair.Bytes() + public_key.size(), private_key.data(), private_key.size());
+    return keypair.Import(raw_keypair);
 }
 } // namespace
 

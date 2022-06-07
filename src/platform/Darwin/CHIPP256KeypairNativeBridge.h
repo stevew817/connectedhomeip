@@ -37,6 +37,8 @@ public:
 
     CHIP_ERROR Initialize() override;
 
+    CHIP_ERROR Import(P256ImportableKeypair & input) override;
+
     CHIP_ERROR Serialize(P256SerializedKeypair & output) const override;
 
     CHIP_ERROR Deserialize(P256SerializedKeypair & input) override;

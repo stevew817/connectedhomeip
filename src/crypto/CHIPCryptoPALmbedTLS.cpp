@@ -926,7 +926,6 @@ exit:
 typedef struct Spake2p_Context
 {
     mbedtls_ecp_group curve;
-    const mbedtls_md_info_t * md_info;
     mbedtls_ecp_point M;
     mbedtls_ecp_point N;
     mbedtls_ecp_point X;
@@ -957,9 +956,6 @@ CHIP_ERROR Spake2p_P256_SHA256_HKDF_HMAC::InitInternal(void)
     mbedtls_ecp_group_init(&context->curve);
     result = mbedtls_ecp_group_load(&context->curve, MBEDTLS_ECP_DP_SECP256R1);
     VerifyOrExit(result == 0, error = CHIP_ERROR_INTERNAL);
-
-    context->md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    VerifyOrExit(context->md_info != nullptr, error = CHIP_ERROR_INTERNAL);
 
     mbedtls_ecp_point_init(&context->M);
     mbedtls_ecp_point_init(&context->N);

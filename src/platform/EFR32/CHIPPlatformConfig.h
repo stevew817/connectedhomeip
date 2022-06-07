@@ -38,6 +38,15 @@
 
 // ==================== Security Adaptations ====================
 
+#include <mbedtls/version.h>
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256)
+#include <psa/crypto.h>
+#define CHIP_CONFIG_SHA256_CONTEXT_SIZE (sizeof(psa_hash_operation_t))
+#else
+#include <mbedtls/sha256.h>
+#define CHIP_CONFIG_SHA256_CONTEXT_SIZE (sizeof(mbedtls_sha256_context))
+#endif
+
 // FIXME: EFR32 set to MBED-TLS (But this is third-party repo in CHIP, not SDK)
 
 // FIXME: EFR32 currently set to CHIP (Does this use Entropy.cpp ?)

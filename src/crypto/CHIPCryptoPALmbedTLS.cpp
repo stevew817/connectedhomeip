@@ -24,8 +24,26 @@
 
 #include <type_traits>
 
-#include <mbedtls/bignum.h>
+// Include version header to get configuration information
+#include <mbedtls/version.h>
+
+// Include PSA Crypto APIs if configured
+#if defined(MBEDTLS_PSA_CRYPTO_C)
+#include <psa/crypto.h>
+#endif
+
+// Includes for AES-CCM when not using the PSA API
+#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_CCM) && defined(PSA_WANT_KEY_TYPE_AES))
 #include <mbedtls/ccm.h>
+#else
+// The PSA Crypto API does not support separate tag buffers, so we need to allocate buffers
+#include "mbedtls/platform.h"
+#if !defined(MBEDTLS_PLATFORM_C)
+#define mbedtls_calloc calloc
+#define mbedtls_free   free
+#endif
+#endif
+
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/ecdh.h>
 #include <mbedtls/ecdsa.h>
@@ -34,6 +52,7 @@
 #include <mbedtls/error.h>
 #include <mbedtls/hkdf.h>
 #include <mbedtls/md.h>
+#include <mbedtls/bignum.h>
 #include <mbedtls/pkcs5.h>
 #include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
@@ -157,6 +176,67 @@ CHIP_ERROR AES_CCM_encrypt(const uint8_t * plaintext, size_t plaintext_length, c
 exit:
     mbedtls_ccm_free(&context);
     return error;
+#else
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    mbedtls_svc_key_id_t key_id = 0;
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    size_t output_length = 0;
+    uint8_t * buffer = nullptr;
+    bool allocated_buffer = false;
+
+    // If the ciphertext and tag outputs aren't a contiguous buffer, the PSA API requires buffer copying
+    if (Uint8::to_uchar(ciphertext) + plaintext_length != Uint8::to_uchar(tag))
+    {
+        buffer = (uint8_t *) mbedtls_calloc(1, plaintext_length + tag_length);
+        allocated_buffer = true;
+        VerifyOrExit(buffer != nullptr, error = CHIP_ERROR_NO_MEMORY);
+    }
+
+    // Superimpose tag and key length requirements. The other checks are done by the PSA implementation.
+    VerifyOrExit(_isValidTagLength(tag_length), error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(_isValidKeyLength(key_length), error = CHIP_ERROR_UNSUPPORTED_ENCRYPTION_TYPE);
+
+    psa_crypto_init();
+
+    psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attr, key_length * 8);
+    psa_set_key_algorithm(&attr, PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(PSA_ALG_CCM, 8));
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_ENCRYPT);
+
+    status = psa_import_key(&attr,
+                            Uint8::to_const_uchar(key),
+                            key_length,
+                            &key_id);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    status = psa_aead_encrypt(key_id,
+                              PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, tag_length),
+                              Uint8::to_const_uchar(nonce), nonce_length,
+                              Uint8::to_const_uchar(aad), aad_length,
+                              Uint8::to_const_uchar(plaintext), plaintext_length,
+                              allocated_buffer ? buffer : ciphertext, plaintext_length + tag_length,
+                              &output_length);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+    VerifyOrExit(output_length == plaintext_length + tag_length, error = CHIP_ERROR_INTERNAL);
+
+    if (allocated_buffer)
+    {
+        memcpy(Uint8::to_uchar(ciphertext), buffer, plaintext_length);
+        memcpy(Uint8::to_uchar(tag), buffer + plaintext_length, tag_length);
+        memset(buffer, 0, plaintext_length + tag_length);
+    }
+
+exit:
+    if (allocated_buffer)
+    {
+        mbedtls_free(buffer);
+    }
+
+    psa_destroy_key(key_id);
+    return error;
+#endif
 }
 
 CHIP_ERROR AES_CCM_decrypt(const uint8_t * ciphertext, size_t ciphertext_len, const uint8_t * aad, size_t aad_len,
@@ -164,6 +244,8 @@ CHIP_ERROR AES_CCM_decrypt(const uint8_t * ciphertext, size_t ciphertext_len, co
                            size_t nonce_length, uint8_t * plaintext)
 {
     CHIP_ERROR error = CHIP_NO_ERROR;
+
+#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_CCM) && defined(PSA_WANT_KEY_TYPE_AES))
     int result       = 1;
 
     mbedtls_ccm_context context;
@@ -198,6 +280,70 @@ CHIP_ERROR AES_CCM_decrypt(const uint8_t * ciphertext, size_t ciphertext_len, co
 exit:
     mbedtls_ccm_free(&context);
     return error;
+#else
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    mbedtls_svc_key_id_t key_id = 0;
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    size_t output_length = 0;
+    uint8_t * buffer = nullptr;
+    bool allocated_buffer = false;
+
+    // If the ciphertext and tag outputs aren't a contiguous buffer, the PSA API requires buffer copying
+    if (Uint8::to_const_uchar(ciphertext) + ciphertext_len != Uint8::to_const_uchar(tag))
+    {
+        buffer = (uint8_t *) mbedtls_calloc(1, ciphertext_len + tag_length);
+        allocated_buffer = true;
+        VerifyOrExit(buffer != nullptr, error = CHIP_ERROR_NO_MEMORY);
+    }
+
+    // Superimpose tag and key length requirements. The other checks are done by the PSA implementation.
+    VerifyOrExit(_isValidTagLength(tag_length), error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(_isValidKeyLength(key_length), error = CHIP_ERROR_UNSUPPORTED_ENCRYPTION_TYPE);
+
+    psa_crypto_init();
+
+    psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attr, key_length * 8);
+    psa_set_key_algorithm(&attr, PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(PSA_ALG_CCM, 8));
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_DECRYPT);
+
+    status = psa_import_key(&attr,
+                            Uint8::to_const_uchar(key),
+                            key_length,
+                            &key_id);
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    if (allocated_buffer)
+    {
+        memcpy(buffer, ciphertext, ciphertext_len);
+        memcpy(buffer + ciphertext_len, tag, tag_length);
+    }
+
+    status = psa_aead_decrypt(key_id,
+                              PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, tag_length),
+                              Uint8::to_const_uchar(nonce), nonce_length,
+                              Uint8::to_const_uchar(aad), aad_len,
+                              allocated_buffer ? buffer : ciphertext, ciphertext_len + tag_length,
+                              plaintext, ciphertext_len,
+                              &output_length);
+
+    if (allocated_buffer)
+    {
+        memset(buffer, 0, ciphertext_len + tag_length);
+    }
+
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+    VerifyOrExit(output_length == ciphertext_len, error = CHIP_ERROR_INTERNAL);
+exit:
+    if (allocated_buffer)
+    {
+        mbedtls_free(buffer);
+    }
+
+    psa_destroy_key(key_id);
+    return error;
+#endif
 }
 
 CHIP_ERROR Hash_SHA256(const uint8_t * data, const size_t data_length, uint8_t * out_buffer)

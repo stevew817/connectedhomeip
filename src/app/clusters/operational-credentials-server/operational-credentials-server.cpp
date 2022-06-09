@@ -1053,10 +1053,11 @@ bool emberAfOperationalCredentialsClusterCSRRequestCallback(app::CommandHandler 
         }
 
 #ifdef ENABLE_HSM_CASE_OPS_KEY
-        keypair.CreateOperationalKey(gFabricBeingCommissioned.GetFabricIndex());
+        err = keypair.CreateOperationalKey(gFabricBeingCommissioned.GetFabricIndex());
 #else
-        keypair.Initialize();
+        err = keypair.Initialize();
 #endif
+        VerifyOrExit(err == CHIP_NO_ERROR, finalStatus = Status::Failure);
         err = gFabricBeingCommissioned.SetOperationalKeypair(&keypair);
         VerifyOrExit(err == CHIP_NO_ERROR, finalStatus = Status::Failure);
 

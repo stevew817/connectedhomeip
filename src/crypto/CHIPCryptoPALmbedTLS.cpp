@@ -32,16 +32,47 @@
 #include <psa/crypto.h>
 #endif
 
-// Includes for AES-CCM when not using the PSA API
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_CCM) && defined(PSA_WANT_KEY_TYPE_AES))
-#include <mbedtls/ccm.h>
-#else
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_CCM) && defined(PSA_WANT_KEY_TYPE_AES)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_AES
 // The PSA Crypto API does not support separate tag buffers, so we need to allocate buffers
 #include "mbedtls/platform.h"
 #if !defined(MBEDTLS_PLATFORM_C)
 #define mbedtls_calloc calloc
 #define mbedtls_free   free
 #endif
+#else
+#include <mbedtls/ccm.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_HMAC
+#else
+#include <mbedtls/pkcs5.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_ECDSA) && defined(PSA_WANT_ALG_ECDH) && defined(PSA_WANT_ECC_SECP_R1_256) && defined(MBEDTLS_USE_PSA_CRYPTO)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_ECC
+#else
+#include <mbedtls/ecdsa.h>
+#include <mbedtls/ecdh.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_SHA_1
+#else
+#include <mbedtls/sha1.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256
+#else
+#include <mbedtls/sha256.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HKDF)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_HKDF
+#else
+#include <mbedtls/hkdf.h>
 #endif
 
 // Includes for the DRBG when not using PSA
@@ -53,29 +84,6 @@
 // Includes for SPAKE2+ (not supported through PSA API yet)
 #include <mbedtls/bignum.h>
 #include <mbedtls/ecp.h>
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC))
-#include <mbedtls/pkcs5.h>
-#endif
-
-#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_ECDSA) && defined(PSA_WANT_ALG_ECDH) && defined(PSA_WANT_ECC_SECP_R1_256) && defined(MBEDTLS_USE_PSA_CRYPTO)
-#define CHIP_CRYPTO_USE_PSA_API_FOR_ECC
-#else
-#include <mbedtls/ecdsa.h>
-#include <mbedtls/ecdh.h>
-#endif
-
-// Includes for SHA when not using PSA
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1))
-#include <mbedtls/sha1.h>
-#endif
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
-#include <mbedtls/sha256.h>
-#endif
-
-// Includes for HKDF when not using PSA
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HKDF))
-#include <mbedtls/hkdf.h>
-#endif
 
 // Includes for X.509 handling (not part of the PSA scope)
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -87,6 +95,7 @@
 #include <mbedtls/x509_csr.h>
 
 #include <mbedtls/error.h>
+
 #include <lib/core/CHIPSafeCasts.h>
 #include <lib/support/BufferWriter.h>
 #include <lib/support/BytesToHex.h>
@@ -168,6 +177,8 @@ CHIP_ERROR AES_CCM_encrypt(const uint8_t * plaintext, size_t plaintext_length, c
                            uint8_t * tag, size_t tag_length)
 {
     CHIP_ERROR error = CHIP_NO_ERROR;
+
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_AES)
     int result       = 1;
 
     mbedtls_ccm_context context;
@@ -259,7 +270,7 @@ exit:
     {
         mbedtls_free(buffer);
     }
-
+    psa_reset_key_attributes(&attr);
     psa_destroy_key(key_id);
     return error;
 #endif
@@ -271,7 +282,7 @@ CHIP_ERROR AES_CCM_decrypt(const uint8_t * ciphertext, size_t ciphertext_len, co
 {
     CHIP_ERROR error = CHIP_NO_ERROR;
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_CCM) && defined(PSA_WANT_KEY_TYPE_AES))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_AES)
     int result       = 1;
 
     mbedtls_ccm_context context;
@@ -367,6 +378,7 @@ exit:
         mbedtls_free(buffer);
     }
 
+    psa_reset_key_attributes(&attr);
     psa_destroy_key(key_id);
     return error;
 #endif
@@ -378,7 +390,7 @@ CHIP_ERROR Hash_SHA256(const uint8_t * data, const size_t data_length, uint8_t *
     VerifyOrReturnError(data != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
     const int result = mbedtls_sha256(Uint8::to_const_uchar(data), data_length, Uint8::to_uchar(out_buffer), 0);
 #else
@@ -407,7 +419,7 @@ CHIP_ERROR Hash_SHA1(const uint8_t * data, const size_t data_length, uint8_t * o
     // zero data length hash is supported.
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_1)
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
     const int result = mbedtls_sha1(Uint8::to_const_uchar(data), data_length, Uint8::to_uchar(out_buffer));
 #else
@@ -431,7 +443,7 @@ CHIP_ERROR Hash_SHA1(const uint8_t * data, const size_t data_length, uint8_t * o
     return CHIP_NO_ERROR;
 }
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
 static_assert(kMAX_Hash_SHA256_Context_Size >= sizeof(mbedtls_sha256_context),
               "kMAX_Hash_SHA256_Context_Size is too small for the size of underlying mbedtls_sha256_context");
 
@@ -450,7 +462,7 @@ static inline psa_hash_operation_t * to_inner_hash_sha256_context(HashSHA256Opaq
 #endif
 Hash_SHA256_stream::Hash_SHA256_stream(void)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
     mbedtls_sha256_init(context);
 #else
@@ -462,7 +474,7 @@ Hash_SHA256_stream::Hash_SHA256_stream(void)
 
 Hash_SHA256_stream::~Hash_SHA256_stream(void)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
     mbedtls_sha256_free(context);
 #else
@@ -474,7 +486,7 @@ Hash_SHA256_stream::~Hash_SHA256_stream(void)
 
 CHIP_ERROR Hash_SHA256_stream::Begin(void)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
@@ -497,7 +509,7 @@ CHIP_ERROR Hash_SHA256_stream::Begin(void)
 
 CHIP_ERROR Hash_SHA256_stream::AddData(const ByteSpan data)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
@@ -518,7 +530,7 @@ CHIP_ERROR Hash_SHA256_stream::AddData(const ByteSpan data)
 
 CHIP_ERROR Hash_SHA256_stream::GetDigest(MutableByteSpan & out_buffer)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
 
     // Back-up context as we are about to finalize the hash to extract digest.
@@ -564,7 +576,7 @@ CHIP_ERROR Hash_SHA256_stream::Finish(MutableByteSpan & out_buffer)
 {
     VerifyOrReturnError(out_buffer.size() >= kSHA256_Hash_Length, CHIP_ERROR_BUFFER_TOO_SMALL);
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
@@ -593,7 +605,7 @@ CHIP_ERROR Hash_SHA256_stream::Finish(MutableByteSpan & out_buffer)
 
 void Hash_SHA256_stream::Clear(void)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
     mbedtls_platform_zeroize(this, sizeof(*this));
 #else
     psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
@@ -620,7 +632,7 @@ CHIP_ERROR HKDF_sha::HKDF_SHA256(const uint8_t * secret, const size_t secret_len
     VerifyOrReturnError(out_length > 0, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HKDF))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_HKDF)
     const mbedtls_md_info_t * const md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     VerifyOrReturnError(md != nullptr, CHIP_ERROR_INTERNAL);
 
@@ -673,7 +685,7 @@ CHIP_ERROR HMAC_sha::HMAC_SHA256(const uint8_t * key, size_t key_length, const u
     VerifyOrReturnError(out_length >= kSHA256_Hash_Length, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC))
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_HMAC)
     const mbedtls_md_info_t * const md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     VerifyOrReturnError(md != nullptr, CHIP_ERROR_INTERNAL);
 
@@ -723,6 +735,7 @@ CHIP_ERROR HMAC_sha::HMAC_SHA256(const uint8_t * key, size_t key_length, const u
     VerifyOrExit(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), error = CHIP_ERROR_INTERNAL);
 exit:
     psa_mac_abort(&operation);
+    psa_reset_key_attributes(&attr);
     psa_destroy_key(key_id);
     return error;
 #endif
@@ -731,7 +744,7 @@ exit:
 CHIP_ERROR PBKDF2_sha256::pbkdf2_sha256(const uint8_t * password, size_t plen, const uint8_t * salt, size_t slen,
                                         unsigned int iteration_count, uint32_t key_length, uint8_t * output)
 {
-#if !(defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HMAC) )
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_HMAC)
     CHIP_ERROR error = CHIP_NO_ERROR;
     int result       = 0;
     const mbedtls_md_info_t * md_info;
@@ -880,6 +893,7 @@ exit:
 
 exit:
     psa_mac_abort(&operation);
+    psa_reset_key_attributes(&attr);
     psa_destroy_key(key_id);
     return error;
 #endif

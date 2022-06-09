@@ -1458,15 +1458,15 @@ CHIP_ERROR P256Keypair::Export(P256ImportableKeypair & output) const
 #if defined(CHIP_CRYPTO_USE_PSA_API_FOR_ECC)
     // Support the import format (pubX | pubY | d) only
     // TODO: Change PSA serialisation format to only store key ID
-    P256SerializedKeypair & input_casted = static_cast<P256SerializedKeypair &>(input);
-    static_assert(std::is_same<decltype(&input), decltype(&input_casted)>());
+    P256SerializedKeypair & output_casted = static_cast<P256SerializedKeypair &>(output);
+    static_assert(std::is_same<decltype(&output), decltype(&output_casted)>());
 
-    return Serialize(input_casted);
+    return Serialize(output_casted);
 #else
-    P256SerializedKeypair & input_casted = static_cast<P256SerializedKeypair &>(input);
-    static_assert(std::is_same<decltype(&input), decltype(&input_casted)>());
+    P256SerializedKeypair & output_casted = static_cast<P256SerializedKeypair &>(output);
+    static_assert(std::is_same<decltype(&output), decltype(&output_casted)>());
 
-    return Serialize(input_casted);
+    return Serialize(output_casted);
 #endif
 }
 

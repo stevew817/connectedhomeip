@@ -9,6 +9,7 @@
 - (CHIP_ERROR)Serialize:(chip::Crypto::P256SerializedKeypair &)output;
 - (CHIP_ERROR)Deserialize:(chip::Crypto::P256SerializedKeypair &)input;
 - (CHIP_ERROR)Import:(chip::Crypto::P256ImportableKeypair &)input;
+- (CHIP_ERROR)Export:(chip::Crypto::P256ImportableKeypair &)output;
 - (CHIP_ERROR)createOrLoadKeys:(CHIPToolPersistentStorageDelegate *)storage;
 - (NSData *)getIPK;
 

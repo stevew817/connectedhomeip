@@ -58,6 +58,15 @@ CHIP_ERROR CHIPP256KeypairBridge::Import(P256ImportableKeypair & input)
     return CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE;
 }
 
+CHIP_ERROR CHIPP256KeypairBridge::Export(P256ImportableKeypair & output) const
+{
+    if (!HasKeypair()) {
+        return CHIP_ERROR_INCORRECT_STATE;
+    }
+
+    return CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE;
+}
+
 CHIP_ERROR CHIPP256KeypairBridge::Serialize(P256SerializedKeypair & output) const
 {
     if (!HasKeypair()) {

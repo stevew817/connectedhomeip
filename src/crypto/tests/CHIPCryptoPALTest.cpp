@@ -84,8 +84,14 @@ namespace {
 class Test_P256Keypair : public P256KeypairHSM
 {
 public:
-    Test_P256Keypair() { SetKeyId(HSM_ECC_KEYID); }
-    Test_P256Keypair(uint32_t keyId) { SetKeyId(keyId); }
+    Test_P256Keypair(SupportedECPKeyUsage usage, SupportedECPKeyLifetime lifetime) : P256KeypairHSM(usage, lifetime)
+    {
+        SetKeyId(HSM_ECC_KEYID);
+    }
+    Test_P256Keypair(SupportedECPKeyUsage usage, SupportedECPKeyLifetime lifetime, uint32_t keyId) : P256KeypairHSM(usage, lifetime)
+    {
+        SetKeyId(keyId);
+    }
 };
 #else
 using Test_P256Keypair                  = P256Keypair;
@@ -978,7 +984,7 @@ static void TestECDSA_Signing_SHA256_Msg(nlTestSuite * inSuite, void * inContext
     const char * msg  = "Hello World!";
     size_t msg_length = strlen(msg);
 
-    Test_P256Keypair keypair;
+    Test_P256Keypair keypair(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
 
     NL_TEST_ASSERT(inSuite, keypair.Initialize() == CHIP_NO_ERROR);
 
@@ -998,7 +1004,7 @@ static void TestECDSA_Signing_SHA256_Hash(nlTestSuite * inSuite, void * inContex
                              0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F };
     size_t hash_length   = sizeof(hash);
 
-    Test_P256Keypair keypair;
+    Test_P256Keypair keypair(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
     NL_TEST_ASSERT(inSuite, keypair.Initialize() == CHIP_NO_ERROR);
 
     // TODO: Need to make this large number (1k+) to catch some signature serialization corner cases
@@ -1191,13 +1197,13 @@ static void TestECDSA_ValidationHashInvalidParam(nlTestSuite * inSuite, void * i
 static void TestECDH_EstablishSecret(nlTestSuite * inSuite, void * inContext)
 {
     HeapChecker heapChecker(inSuite);
-    Test_P256Keypair keypair1;
+    Test_P256Keypair keypair1(SupportedECPKeyUsage::ECDH, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
     NL_TEST_ASSERT(inSuite, keypair1.Initialize() == CHIP_NO_ERROR);
 
 #ifdef ENABLE_HSM_EC_KEY
     Test_P256Keypair keypair2(HSM_ECC_KEYID + 1);
 #else
-    Test_P256Keypair keypair2;
+    Test_P256Keypair keypair2(SupportedECPKeyUsage::ECDH, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
 #endif
     NL_TEST_ASSERT(inSuite, keypair2.Initialize() == CHIP_NO_ERROR);
 
@@ -1303,7 +1309,7 @@ void TestCSR_GenDirect(nlTestSuite * inSuite, void * inContext)
     ClearSecretData(csrBuf);
     MutableByteSpan csrSpan(csrBuf);
 
-    Test_P256Keypair keypair;
+    Test_P256Keypair keypair(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
 
     NL_TEST_ASSERT(inSuite, keypair.Initialize() == CHIP_NO_ERROR);
 
@@ -1347,7 +1353,7 @@ static void TestCSR_GenByKeypair(nlTestSuite * inSuite, void * inContext)
     uint8_t csr[kMAX_CSR_Length];
     size_t length = sizeof(csr);
 
-    Test_P256Keypair keypair;
+    Test_P256Keypair keypair(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_INTERNAL);
     NL_TEST_ASSERT(inSuite, keypair.Initialize() == CHIP_NO_ERROR);
     NL_TEST_ASSERT(inSuite, keypair.NewCertificateSigningRequest(csr, length) == CHIP_NO_ERROR);
     NL_TEST_ASSERT(inSuite, length > 0);
@@ -1375,15 +1381,15 @@ static void TestCSR_GenByKeypair(nlTestSuite * inSuite, void * inContext)
 static void TestKeypair_Serialize(nlTestSuite * inSuite, void * inContext)
 {
     HeapChecker heapChecker(inSuite);
-    Test_P256Keypair keypair;
+    Test_P256Keypair keypair(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_EXPORTABLE);
 
     NL_TEST_ASSERT(inSuite, keypair.Initialize() == CHIP_NO_ERROR);
 
-    P256SerializedKeypair serialized;
-    NL_TEST_ASSERT(inSuite, keypair.Serialize(serialized) == CHIP_NO_ERROR);
+    P256ImportableKeypair keybytes;
+    NL_TEST_ASSERT(inSuite, keypair.Export(keybytes) == CHIP_NO_ERROR);
 
-    Test_P256Keypair keypair_dup;
-    NL_TEST_ASSERT(inSuite, keypair_dup.Deserialize(serialized) == CHIP_NO_ERROR);
+    Test_P256Keypair keypair_dup(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::EPHEMERAL_EXPORTABLE);
+    NL_TEST_ASSERT(inSuite, keypair_dup.Import(keybytes) == CHIP_NO_ERROR);
 
     const char * msg         = "Test Message for Keygen";
     const uint8_t * test_msg = Uint8::from_const_char(msg);

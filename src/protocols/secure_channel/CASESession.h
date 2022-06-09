@@ -59,6 +59,7 @@ class DLL_EXPORT CASESession : public Messaging::UnsolicitedMessageHandler,
                                public PairingSession
 {
 public:
+    CASESession() : mEphemeralKey(Crypto::SupportedECPKeyUsage::ECDH, Crypto::SupportedECPKeyLifetime::EPHEMERAL_INTERNAL) {}
     ~CASESession() override;
 
     Transport::SecureSession::Type GetSecureSessionType() const override { return Transport::SecureSession::Type::kCASE; }

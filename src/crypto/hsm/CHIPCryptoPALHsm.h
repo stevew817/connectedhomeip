@@ -122,9 +122,19 @@ public:
         keyid           = 0;
     }
 
+    P256KeypairHSM(SupportedECPKeyUsage usage, SupportedECPKeyLifetime lifetime) : P256Keypair(usage, lifetime)
+    {
+        provisioned_key = false;
+        keyid           = 0;
+    }
+
     ~P256KeypairHSM();
 
     virtual CHIP_ERROR Initialize() override;
+
+    virtual CHIP_ERROR Export(P256ImportableKeypair & output) const override;
+
+    virtual CHIP_ERROR Import(P256ImportableKeypair & input) override;
 
     virtual CHIP_ERROR Serialize(P256SerializedKeypair & output) const override;
 

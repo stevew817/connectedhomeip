@@ -995,6 +995,18 @@ CHIP_ERROR P256Keypair::Import(P256ImportableKeypair & input)
     return Deserialize(input_casted);
 }
 
+CHIP_ERROR P256Keypair::Export(P256ImportableKeypair & output) const
+{
+    VerifyOrReturnError(mLifetime == SupportedECPKeyLifetime::EPHEMERAL_EXPORTABLE ||
+                        mLifetime == SupportedECPKeyLifetime::LONGLIVED_EXPORTABLE,
+                        CHIP_ERROR_INVALID_ARGUMENT);
+
+    P256SerializedKeypair & input_casted = static_cast<P256SerializedKeypair &>(input);
+    static_assert(std::is_same<decltype(&input), decltype(&input_casted)>());
+
+    return Serialize(input_casted);
+}
+
 CHIP_ERROR P256Keypair::Serialize(P256SerializedKeypair & output) const
 {
     CHIP_ERROR error = CHIP_NO_ERROR;

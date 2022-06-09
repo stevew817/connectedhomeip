@@ -172,6 +172,26 @@ enum class SupportedECPKeyTypes : uint8_t
     ECP256R1 = 0,
 };
 
+/**
+ * Usage for an ECP key (mutually exclusive)
+ */
+enum class SupportedECPKeyUsage : uint8_t
+{
+    ECDSA = 0,  // Key can be used to sign using ECDSA
+    ECDH = 1    // Key can be used to derive using ECDH
+};
+
+/**
+ * Lifetime for an ECP key
+ */
+enum class SupportedECPKeyLifetime : uint8_t
+{
+    EPHEMERAL_EXPORTABLE = 0,   // Key can not be serialised, but can be exported
+    EPHEMERAL_INTERNAL = 1,     // Key can not be serialised nor exported
+    LONGLIVED_EXPORTABLE = 2,   // Key can be serialised and exported
+    LONGLIVED_INTERNAL = 3,     // Key can be serialised, but not exported
+};
+
 /** @brief Safely clears the first `len` bytes of memory area `buf`.
  * @param buf Pointer to a memory buffer holding secret data that must be cleared.
  * @param len Specifies secret data size in bytes.
@@ -374,7 +394,7 @@ public:
     virtual CHIP_ERROR Initialize() = 0;
 
     /**
-     * @brief Import a keypair.
+     * @brief Import the keypair.
      *
      * Initialises the keypair object to the private key represented by
      * the \p input.
@@ -385,6 +405,16 @@ public:
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     virtual CHIP_ERROR Import(P256ImportableKeypair & input) = 0;
+
+    /**
+     * @brief Export the keypair.
+     *
+     * Exports the keypair object to its plaintext representation (see
+     * documentation for Import)
+     *
+     * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
+     **/
+    virtual CHIP_ERROR Export(P256ImportableKeypair & output) const = 0;
 
     /**
      * @brief Serialize the keypair.
@@ -413,7 +443,21 @@ public:
 class P256Keypair : public P256KeypairBase
 {
 public:
+    /**
+     * @brief Declare the keypair with the default usage (ECDSA) and
+     * lifetime (ephemeral exportable).
+     **/
     P256Keypair() {}
+
+    /**
+     * @brief Declare the keypair with a specific usage and lifetime.
+     **/
+    P256Keypair(SupportedECPKeyUsage usage, SupportedECPKeyLifetime lifetime)
+    {
+        mUsage = usage;
+        mLifetime = lifetime;
+    }
+
     ~P256Keypair() override;
 
     /**
@@ -434,6 +478,18 @@ public:
      * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
      **/
     CHIP_ERROR Import(P256ImportableKeypair & input) override;
+
+    /**
+     * @brief Export the keypair.
+     *
+     * Exports the keypair object to its plaintext representation (see
+     * documentation for Import)
+     *
+     * The key needs to have been constructed with an exportable lifetime.
+     *
+     * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
+     **/
+    CHIP_ERROR Export(P256ImportableKeypair & output) const override;
 
     /**
      * @brief Serialize the keypair.
@@ -510,6 +566,8 @@ public:
     void Clear();
 
 private:
+    SupportedECPKeyUsage mUsage = SupportedECPKeyUsage::ECDSA;
+    SupportedECPKeyLifetime mLifetime = SupportedECPKeyLifetime::EPHEMERAL_EXPORTABLE;
     P256PublicKey mPublicKey;
     mutable P256KeypairContext mKeypair;
     bool mInitialized = false;

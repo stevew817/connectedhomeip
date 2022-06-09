@@ -1040,6 +1040,7 @@ CHIP_ERROR P256Keypair::ECDSA_sign_msg(const uint8_t * msg, const size_t msg_len
 #elif defined(MBEDTLS_ECDSA_C)
     VerifyOrReturnError(mInitialized, CHIP_ERROR_INCORRECT_STATE);
     VerifyOrReturnError((msg != nullptr) && (msg_length > 0), CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrReturnError(mUsage == SupportedECPKeyUsage::ECDSA, CHIP_ERROR_INVALID_ARGUMENT);
 
     uint8_t digest[kSHA256_Hash_Length];
     memset(&digest[0], 0, sizeof(digest));
@@ -1056,6 +1057,7 @@ CHIP_ERROR P256Keypair::ECDSA_sign_hash(const uint8_t * hash, const size_t hash_
 #if defined(CHIP_CRYPTO_USE_PSA_API_FOR_ECC)
     VerifyOrReturnError(mInitialized, CHIP_ERROR_INCORRECT_STATE);
     VerifyOrReturnError((hash != nullptr) && (hash_length > 0), CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrReturnError(hash_length == kSHA256_Hash_Length, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(mUsage == SupportedECPKeyUsage::ECDSA, CHIP_ERROR_INVALID_ARGUMENT);
 
     size_t output_length = 0;
@@ -1075,6 +1077,7 @@ CHIP_ERROR P256Keypair::ECDSA_sign_hash(const uint8_t * hash, const size_t hash_
     VerifyOrReturnError(mInitialized, CHIP_ERROR_INCORRECT_STATE);
     VerifyOrReturnError(hash != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(hash_length == kSHA256_Hash_Length, CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrReturnError(mUsage == SupportedECPKeyUsage::ECDSA);
 
     CHIP_ERROR error = CHIP_NO_ERROR;
     int result       = 0;
@@ -1263,7 +1266,7 @@ CHIP_ERROR P256Keypair::ECDH_derive_secret(const P256PublicKey & remote_public_k
     const psa_ecp_keypair * keypair = to_const_psa_keypair(&mKeypair);
     size_t output_length = 0;
 
-    VerifyOrReturnError(mUsage == SupportedECPKeyUsage::ECDH, CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDH, error = CHIP_ERROR_INVALID_ARGUMENT);
 
     status = psa_raw_key_agreement(PSA_ALG_ECDH,
                                    keypair->key_id,
@@ -1655,13 +1658,14 @@ CHIP_ERROR P256Keypair::NewCertificateSigningRequest(uint8_t * out_csr, size_t &
     int result       = 0;
     size_t out_length;
 
+    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDSA, error = CHIP_ERROR_INVALID_ARGUMENT);
+
     mbedtls_x509write_csr csr;
     mbedtls_x509write_csr_init(&csr);
 
     mbedtls_pk_context pk;
     mbedtls_pk_init(&pk);
 #if defined(CHIP_CRYPTO_USE_PSA_API_FOR_ECC)
-    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDSA, error = CHIP_ERROR_INVALID_ARGUMENT);
     result = mbedtls_pk_setup_opaque(&pk, to_psa_keypair(&mKeypair)->key_id);
     VerifyOrExit(result == 0, error = CHIP_ERROR_INTERNAL);
 #else

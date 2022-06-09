@@ -612,6 +612,7 @@ static inline const EC_KEY * to_const_EC_KEY(const P256KeypairContext * context)
 CHIP_ERROR P256Keypair::ECDSA_sign_msg(const uint8_t * msg, const size_t msg_length, P256ECDSASignature & out_signature) const
 {
     VerifyOrReturnError((msg != nullptr) && (msg_length > 0), CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrReturnError(mUsage == SupportedECPKeyUsage::ECDSA, CHIP_ERROR_INVALID_ARGUMENT);
 
     uint8_t digest[kSHA256_Hash_Length];
     memset(&digest[0], 0, sizeof(digest));
@@ -635,6 +636,7 @@ CHIP_ERROR P256Keypair::ECDSA_sign_hash(const uint8_t * hash, const size_t hash_
     VerifyOrExit(mInitialized, error = CHIP_ERROR_INCORRECT_STATE);
     VerifyOrExit(hash != nullptr, error = CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrExit(hash_length == kSHA256_Hash_Length, error = CHIP_ERROR_INVALID_ARGUMENT);
+    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDSA, error = CHIP_ERROR_INVALID_ARGUMENT);
     nid = _nidForCurve(MapECName(mPublicKey.Type()));
     VerifyOrExit(nid != NID_undef, error = CHIP_ERROR_INVALID_ARGUMENT);
 
@@ -855,6 +857,7 @@ CHIP_ERROR P256Keypair::ECDH_derive_secret(const P256PublicKey & remote_public_k
     VerifyOrExit(ec_key != nullptr, error = CHIP_ERROR_INTERNAL);
 
     VerifyOrExit(mInitialized, error = CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDH, error = CHIP_ERROR_INVALID_ARGUMENT);
 
     local_key = EVP_PKEY_new();
     VerifyOrExit(local_key != nullptr, error = CHIP_ERROR_INTERNAL);
@@ -1150,6 +1153,7 @@ CHIP_ERROR P256Keypair::NewCertificateSigningRequest(uint8_t * out_csr, size_t &
     VerifyOrExit(subject != nullptr, error = CHIP_ERROR_INTERNAL);
 
     VerifyOrExit(mInitialized, error = CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrExit(mUsage == SupportedECPKeyUsage::ECDSA, error = CHIP_ERROR_INVALID_ARGUMENT);
 
     result = X509_REQ_set_version(x509_req, 0);
     VerifyOrExit(result == 1, error = CHIP_ERROR_INTERNAL);

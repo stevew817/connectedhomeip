@@ -1023,12 +1023,12 @@ CHIP_ERROR FabricInfo::TestOnlyBuildFabric(ByteSpan rootCert, ByteSpan icacCert,
     ReturnErrorOnFailure(SetNOCCert(nocCert));
 
     // NOTE: this requres ENABLE_HSM_CASE_OPS_KEY is not defined
-    P256SerializedKeypair opKeysSerialized;
-    memcpy(static_cast<uint8_t *>(opKeysSerialized), nocKey.data(), nocKey.size());
-    ReturnErrorOnFailure(opKeysSerialized.SetLength(nocKey.size()));
+    P256ImportableKeypair opKeysImportable;
+    memcpy(static_cast<uint8_t *>(opKeysImportable), nocKey.data(), nocKey.size());
+    ReturnErrorOnFailure(opKeysImportable.SetLength(nocKey.size()));
 
     P256Keypair opKey;
-    ReturnErrorOnFailure(opKey.Deserialize(opKeysSerialized));
+    ReturnErrorOnFailure(opKey.Import(opKeysImportable));
     ReturnErrorOnFailure(SetOperationalKeypair(&opKey));
 
     // NOTE: mVendorId and mFabricLabel are not initialize, because they are not used in tests.

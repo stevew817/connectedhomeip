@@ -1155,11 +1155,11 @@ bool Cmd_GenCD(int argc, char * argv[])
         VerifyOrReturnError(ExtractSKIDFromX509Cert(cert.get(), signerKeyId), false);
 
         // Initialize P256Keypair from EVP_PKEY.
-        P256Keypair keypair;
+        std::unique_ptr<P256Keypair> keypair = ConstructP256Keypair(ECPKeypairRoles::UNDEFINED, -1);
         {
             P256ImportableKeypair importableKeypair;
             VerifyOrReturnError(ExportKeypair(key.get(), importableKeypair), false);
-            VerifyOrReturnError(keypair.Import(importableKeypair) == CHIP_NO_ERROR, false);
+            VerifyOrReturnError(keypair->Import(importableKeypair) == CHIP_NO_ERROR, false);
         }
 
         // Encode CD TLV content.
@@ -1180,12 +1180,12 @@ bool Cmd_GenCD(int argc, char * argv[])
         MutableByteSpan signedMessage(signedMessageBuf);
         if (gCDConfig.IsErrorTestCaseEnabled())
         {
-            VerifyOrReturnError(CMS_Sign_Ignore_Error(encodedCD, signerKeyId, keypair, signedMessage, gCDConfig) == CHIP_NO_ERROR,
+            VerifyOrReturnError(CMS_Sign_Ignore_Error(encodedCD, signerKeyId, *keypair, signedMessage, gCDConfig) == CHIP_NO_ERROR,
                                 false);
         }
         else
         {
-            VerifyOrReturnError(CMS_Sign(encodedCD, signerKeyId, keypair, signedMessage) == CHIP_NO_ERROR, false);
+            VerifyOrReturnError(CMS_Sign(encodedCD, signerKeyId, *keypair, signedMessage) == CHIP_NO_ERROR, false);
         }
 
         // Write to file.

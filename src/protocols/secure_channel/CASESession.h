@@ -59,7 +59,10 @@ class DLL_EXPORT CASESession : public Messaging::UnsolicitedMessageHandler,
                                public PairingSession
 {
 public:
-    CASESession() : mEphemeralKey(Crypto::SupportedECPKeyUsage::ECDH, Crypto::SupportedECPKeyLifetime::EPHEMERAL_INTERNAL) {}
+    CASESession()
+    {
+        mEphemeralKey = Crypto::ConstructP256Keypair(Crypto::ECPKeypairRoles::CASE_KEY, -1);
+    }
     ~CASESession() override;
 
     Transport::SecureSession::Type GetSecureSessionType() const override { return Transport::SecureSession::Type::kCASE; }
@@ -231,7 +234,7 @@ private:
 #ifdef ENABLE_HSM_CASE_EPHEMERAL_KEY
     Crypto::P256KeypairHSM mEphemeralKey;
 #else
-    Crypto::P256Keypair mEphemeralKey;
+    std::unique_ptr<Crypto::P256Keypair> mEphemeralKey;
 #endif
     Crypto::P256ECDHDerivedSecret mSharedSecret;
     Credentials::ValidationContext mValidContext;

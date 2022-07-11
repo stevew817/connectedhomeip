@@ -45,6 +45,8 @@ namespace Controller {
 class DLL_EXPORT AndroidOperationalCredentialsIssuer : public OperationalCredentialsDelegate
 {
 public:
+    AndroidOperationalCredentialsIssuer() : mIssuer(Crypto::SupportedECPKeyUsage::ECDSA, Crypto::SupportedECPKeyLifetime::LONGLIVED_INTERNAL)
+    {}
     virtual ~AndroidOperationalCredentialsIssuer() {}
 
     CHIP_ERROR GenerateNOCChain(const ByteSpan & csrElements, const ByteSpan & csrNonce, const ByteSpan & attestationSignature,

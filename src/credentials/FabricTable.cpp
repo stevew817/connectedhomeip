@@ -341,9 +341,9 @@ CHIP_ERROR FabricInfo::SetOperationalKeypair(const P256Keypair * keyPair)
     if (mOperationalKey == nullptr)
     {
 #ifdef ENABLE_HSM_CASE_OPS_KEY
-        mOperationalKey = chip::Platform::New<P256KeypairHSM>();
+        mOperationalKey = chip::Platform::New<P256KeypairHSM>(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::LONGLIVED_INTERNAL);
 #else
-        mOperationalKey = chip::Platform::New<P256Keypair>();
+        mOperationalKey = chip::Platform::New<P256Keypair>(SupportedECPKeyUsage::ECDSA, SupportedECPKeyLifetime::LONGLIVED_INTERNAL);
 #endif
     }
     VerifyOrReturnError(mOperationalKey != nullptr, CHIP_ERROR_NO_MEMORY);

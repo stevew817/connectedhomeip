@@ -343,7 +343,7 @@ CHIP_ERROR CASESession::SendSigma1()
     VerifyOrReturnError(GetLocalSessionId().HasValue(), CHIP_ERROR_INCORRECT_STATE);
 
     // Generate an ephemeral keypair
-    ReturnErrorOnFailure(mEphemeralKey.Initialize());
+    ReturnErrorOnFailure(mEphemeralKey->Initialize());
 
     // Fill in the random value
     ReturnErrorOnFailure(DRBG_get_bytes(mInitiatorRandom, sizeof(mInitiatorRandom)));
@@ -377,7 +377,7 @@ CHIP_ERROR CASESession::SendSigma1()
     ReturnErrorOnFailure(tlvWriter.PutBytes(TLV::ContextTag(3), destinationIdentifier, sizeof(destinationIdentifier)));
 
     ReturnErrorOnFailure(
-        tlvWriter.PutBytes(TLV::ContextTag(4), mEphemeralKey.Pubkey(), static_cast<uint32_t>(mEphemeralKey.Pubkey().Length())));
+        tlvWriter.PutBytes(TLV::ContextTag(4), mEphemeralKey->Pubkey(), static_cast<uint32_t>(mEphemeralKey->Pubkey().Length())));
 
     if (mLocalMRPConfig.HasValue())
     {
@@ -666,17 +666,17 @@ CHIP_ERROR CASESession::SendSigma2()
 
     // Generate an ephemeral keypair
 #ifdef ENABLE_HSM_CASE_EPHEMERAL_KEY
-    mEphemeralKey.SetKeyId(CASE_EPHEMERAL_KEY);
+    mEphemeralKey->SetKeyId(CASE_EPHEMERAL_KEY);
 #endif
-    ReturnErrorOnFailure(mEphemeralKey.Initialize());
+    ReturnErrorOnFailure(mEphemeralKey->Initialize());
 
     // Generate a Shared Secret
-    ReturnErrorOnFailure(mEphemeralKey.ECDH_derive_secret(mRemotePubKey, mSharedSecret));
+    ReturnErrorOnFailure(mEphemeralKey->ECDH_derive_secret(mRemotePubKey, mSharedSecret));
 
     uint8_t msg_salt[kIPKSize + kSigmaParamRandomNumberSize + kP256_PublicKey_Length + kSHA256_Hash_Length];
 
     MutableByteSpan saltSpan(msg_salt);
-    ReturnErrorOnFailure(ConstructSaltSigma2(ByteSpan(msg_rand), mEphemeralKey.Pubkey(), ByteSpan(mIPK), saltSpan));
+    ReturnErrorOnFailure(ConstructSaltSigma2(ByteSpan(msg_rand), mEphemeralKey->Pubkey(), ByteSpan(mIPK), saltSpan));
 
     HKDF_sha_crypto mHKDF;
     uint8_t sr2k[CHIP_CRYPTO_SYMMETRIC_KEY_LENGTH_BYTES];
@@ -690,7 +690,7 @@ CHIP_ERROR CASESession::SendSigma2()
     chip::Platform::ScopedMemoryBuffer<uint8_t> msg_R2_Signed;
     VerifyOrReturnError(msg_R2_Signed.Alloc(msg_r2_signed_len), CHIP_ERROR_NO_MEMORY);
 
-    ReturnErrorOnFailure(ConstructTBSData(nocCert, icaCert, ByteSpan(mEphemeralKey.Pubkey(), mEphemeralKey.Pubkey().Length()),
+    ReturnErrorOnFailure(ConstructTBSData(nocCert, icaCert, ByteSpan(mEphemeralKey->Pubkey(), mEphemeralKey->Pubkey().Length()),
                                           ByteSpan(mRemotePubKey, mRemotePubKey.Length()), msg_R2_Signed.Get(), msg_r2_signed_len));
 
     // Generate a Signature
@@ -752,7 +752,7 @@ CHIP_ERROR CASESession::SendSigma2()
     ReturnErrorOnFailure(tlvWriterMsg2.PutBytes(TLV::ContextTag(1), &msg_rand[0], sizeof(msg_rand)));
     ReturnErrorOnFailure(tlvWriterMsg2.Put(TLV::ContextTag(2), GetLocalSessionId().Value()));
     ReturnErrorOnFailure(
-        tlvWriterMsg2.PutBytes(TLV::ContextTag(3), mEphemeralKey.Pubkey(), static_cast<uint32_t>(mEphemeralKey.Pubkey().Length())));
+        tlvWriterMsg2.PutBytes(TLV::ContextTag(3), mEphemeralKey->Pubkey(), static_cast<uint32_t>(mEphemeralKey->Pubkey().Length())));
     ReturnErrorOnFailure(tlvWriterMsg2.PutBytes(TLV::ContextTag(4), msg_R2_Encrypted.Get(),
                                                 static_cast<uint32_t>(msg_r2_signed_enc_len + CHIP_CRYPTO_AEAD_MIC_LENGTH_BYTES)));
     if (mLocalMRPConfig.HasValue())
@@ -909,7 +909,7 @@ CHIP_ERROR CASESession::HandleSigma2(System::PacketBufferHandle && msg)
     SuccessOrExit(err = tlvReader.GetBytes(mRemotePubKey, static_cast<uint32_t>(mRemotePubKey.Length())));
 
     // Generate a Shared Secret
-    SuccessOrExit(err = mEphemeralKey.ECDH_derive_secret(mRemotePubKey, mSharedSecret));
+    SuccessOrExit(err = mEphemeralKey->ECDH_derive_secret(mRemotePubKey, mSharedSecret));
 
     // Generate the S2K key
     {
@@ -977,7 +977,7 @@ CHIP_ERROR CASESession::HandleSigma2(System::PacketBufferHandle && msg)
     VerifyOrExit(msg_R2_Signed.Alloc(msg_r2_signed_len), err = CHIP_ERROR_NO_MEMORY);
 
     SuccessOrExit(err = ConstructTBSData(responderNOC, responderICAC, ByteSpan(mRemotePubKey, mRemotePubKey.Length()),
-                                         ByteSpan(mEphemeralKey.Pubkey(), mEphemeralKey.Pubkey().Length()), msg_R2_Signed.Get(),
+                                         ByteSpan(mEphemeralKey->Pubkey(), mEphemeralKey->Pubkey().Length()), msg_R2_Signed.Get(),
                                          msg_r2_signed_len));
 
     VerifyOrExit(TLV::TagNumFromTag(decryptedDataTlvReader.GetTag()) == kTag_TBEData_Signature, err = CHIP_ERROR_INVALID_TLV_TAG);
@@ -1045,7 +1045,7 @@ CHIP_ERROR CASESession::SendSigma3()
 
     VerifyOrExit(msg_R3_Signed.Alloc(msg_r3_signed_len), err = CHIP_ERROR_NO_MEMORY);
 
-    SuccessOrExit(err = ConstructTBSData(nocCert, icaCert, ByteSpan(mEphemeralKey.Pubkey(), mEphemeralKey.Pubkey().Length()),
+    SuccessOrExit(err = ConstructTBSData(nocCert, icaCert, ByteSpan(mEphemeralKey->Pubkey(), mEphemeralKey->Pubkey().Length()),
                                          ByteSpan(mRemotePubKey, mRemotePubKey.Length()), msg_R3_Signed.Get(), msg_r3_signed_len));
 
     // Generate a signature
@@ -1245,7 +1245,7 @@ CHIP_ERROR CASESession::HandleSigma3(System::PacketBufferHandle && msg)
     VerifyOrExit(msg_R3_Signed.Alloc(msg_r3_signed_len), err = CHIP_ERROR_NO_MEMORY);
 
     SuccessOrExit(err = ConstructTBSData(initiatorNOC, initiatorICAC, ByteSpan(mRemotePubKey, mRemotePubKey.Length()),
-                                         ByteSpan(mEphemeralKey.Pubkey(), mEphemeralKey.Pubkey().Length()), msg_R3_Signed.Get(),
+                                         ByteSpan(mEphemeralKey->Pubkey(), mEphemeralKey->Pubkey().Length()), msg_R3_Signed.Get(),
                                          msg_r3_signed_len));
 
     VerifyOrExit(TLV::TagNumFromTag(decryptedDataTlvReader.GetTag()) == kTag_TBEData_Signature, err = CHIP_ERROR_INVALID_TLV_TAG);

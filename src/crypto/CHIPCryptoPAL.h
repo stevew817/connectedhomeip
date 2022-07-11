@@ -36,6 +36,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <memory>
 
 namespace chip {
 namespace Crypto {
@@ -190,6 +191,18 @@ enum class SupportedECPKeyLifetime : uint8_t
     EPHEMERAL_INTERNAL = 1,     // Key can not be serialised nor exported
     LONGLIVED_EXPORTABLE = 2,   // Key can be serialised and exported
     LONGLIVED_INTERNAL = 3,     // Key can be serialised, but not exported
+};
+
+/**
+ * Known ECP key roles
+ */
+enum class ECPKeypairRoles : uint8_t
+{
+    UNDEFINED = 0,          // General purpose ECP key
+    OP_KEY = 1,             // Operational key. Set the associated fabric index before initialising this key.
+    DA_KEY = 2,             // Device Attestation key
+    CASE_KEY = 3,           // Ephemeral key used in CASE session establishment
+    COMMISSIONER_KEY = 4,   // Ephemeral key used to attach commisioner to fabric
 };
 
 /** @brief Safely clears the first `len` bytes of memory area `buf`.
@@ -458,6 +471,46 @@ public:
         mLifetime = lifetime;
     }
 
+    /**
+     * @brief Declare the keypair with a specific role and discriminator
+     *
+     * @param[in] role Which key this object will be used for.
+     * @param[in] discriminator Optional discriminator, used to distinguish between different
+     * instances of the same key role (e.g. the operational key which is discriminated based
+     * on the fabric index it is attached to). For unique or ephemeral keys, set this value
+     * to -1. Values between and including 0 and INT_MAX are considered applicable
+     * discriminators.
+     **/
+    P256Keypair(ECPKeypairRoles role, int discriminator)
+    {
+        switch(role)
+        {
+            case ECPKeypairRoles::UNDEFINED:
+                break;
+            case ECPKeypairRoles::OP_KEY:
+                mUsage = SupportedECPKeyUsage::ECDSA;
+                mLifetime = SupportedECPKeyLifetime::LONGLIVED_INTERNAL;
+                break;
+            case ECPKeypairRoles::DA_KEY:
+                mUsage = SupportedECPKeyUsage::ECDSA;
+                mLifetime = SupportedECPKeyLifetime::LONGLIVED_INTERNAL;
+                break;
+            case ECPKeypairRoles::CASE_KEY:
+                mUsage = SupportedECPKeyUsage::ECDH;
+                mLifetime = SupportedECPKeyLifetime::EPHEMERAL_INTERNAL;
+                break;
+            case ECPKeypairRoles::COMMISSIONER_KEY:
+                mUsage = SupportedECPKeyUsage::ECDSA;
+                mLifetime = SupportedECPKeyLifetime::EPHEMERAL_INTERNAL;
+                break;
+            default:
+                break;
+        }
+
+        mRole = role;
+        mKeyDiscriminator = discriminator;
+    }
+
     ~P256Keypair() override;
 
     /**
@@ -515,6 +568,19 @@ public:
     CHIP_ERROR Deserialize(P256SerializedKeypair & input) override;
 
     /**
+     * @brief Erase the keypair.
+     *
+     * A serialisable key can have been stored externally, and the
+     * serialised data may point to separately allocated resources.
+     * Calling Erase() will free those separately allocated resources
+     * meaning that the serialised data may no longer be able to be
+     * deserialised.
+     *
+     * @return Returns a CHIP_ERROR on error, CHIP_NO_ERROR otherwise
+     **/
+    CHIP_ERROR Erase();
+
+    /**
      * @brief Generate a new Certificate Signing Request (CSR).
      * @param csr Newly generated CSR in DER format
      * @param csr_length The caller provides the length of input buffer (csr). The function returns the actual length of generated
@@ -568,10 +634,29 @@ public:
 private:
     SupportedECPKeyUsage mUsage = SupportedECPKeyUsage::ECDSA;
     SupportedECPKeyLifetime mLifetime = SupportedECPKeyLifetime::EPHEMERAL_EXPORTABLE;
+    ECPKeypairRoles mRole = ECPKeypairRoles::UNDEFINED;
+    int mKeyDiscriminator = -1;
     P256PublicKey mPublicKey;
     mutable P256KeypairContext mKeypair;
     bool mInitialized = false;
 };
+
+/**
+ * @brief Overridable constructor function for P256Keypair objects
+ *
+ * Returns an object equal to or derived from the P256Keypair class. Allocating through
+ * this function allows platform implementations to override the P256Keypair behaviour
+ * on a case-by-case basis, for example to store only certain keys in a hardware
+ * accelerator or protected storage.
+ *
+ * @param[in] role Which key this object will be used for.
+ * @param[in] discriminator Optional discriminator, used to distinguish between different
+ * instances of the same key role (e.g. the operational key which is discriminated based
+ * on the fabric index it is attached to). For unique or ephemeral keys, set this value
+ * to -1. Values between and including 0 and INT_MAX are considered applicable
+ * discriminators.
+ */
+std::unique_ptr<P256Keypair> ConstructP256Keypair(ECPKeypairRoles role, int discriminator);
 
 /**
  *  @brief  A data structure for holding an AES CCM128 symmetric key, without the ownership of it.

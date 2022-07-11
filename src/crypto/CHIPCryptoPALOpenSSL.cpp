@@ -594,6 +594,13 @@ ECName MapECName(SupportedECPKeyTypes keyType)
     }
 }
 
+#if !defined(CHIP_CRYPTO_USE_PLATFORM_KEYPAIRS)
+std::unique_ptr<P256Keypair> ConstructP256Keypair(ECPKeypairRoles role, int discriminator)
+{
+    return std::make_unique<P256Keypair>(role, discriminator);
+}
+#endif
+
 static inline void from_EC_KEY(EC_KEY * key, P256KeypairContext * context)
 {
     *SafePointerCast<EC_KEY **>(context) = key;

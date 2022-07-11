@@ -326,7 +326,7 @@ CHIP_ERROR CHIPCommand::InitializeCommissioner(std::string key, chip::FabricId f
     VerifyOrReturnError(icac.Alloc(chip::Controller::kMaxCHIPDERCertLength), CHIP_ERROR_NO_MEMORY);
     VerifyOrReturnError(rcac.Alloc(chip::Controller::kMaxCHIPDERCertLength), CHIP_ERROR_NO_MEMORY);
 
-    chip::Crypto::P256Keypair ephemeralKey;
+    std::unique_ptr<chip::Crypto::P256Keypair> ephemeralKey = ConstructP256Keypair(chip::Crypto::CPKeypairRoles::COMMISSIONER_KEY, -1);
 
     if (fabricId != chip::kUndefinedFabricId)
     {
@@ -341,12 +341,12 @@ CHIP_ERROR CHIPCommand::InitializeCommissioner(std::string key, chip::FabricId f
         chip::MutableByteSpan icacSpan(icac.Get(), chip::Controller::kMaxCHIPDERCertLength);
         chip::MutableByteSpan rcacSpan(rcac.Get(), chip::Controller::kMaxCHIPDERCertLength);
 
-        ReturnLogErrorOnFailure(ephemeralKey.Initialize());
+        ReturnLogErrorOnFailure(ephemeralKey->Initialize());
         chip::NodeId nodeId = mCommissionerNodeId.ValueOr(mCommissionerStorage.GetLocalNodeId());
 
         ReturnLogErrorOnFailure(mCredIssuerCmds->GenerateControllerNOCChain(
-            nodeId, fabricId, mCommissionerStorage.GetCommissionerCATs(), ephemeralKey, rcacSpan, icacSpan, nocSpan));
-        commissionerParams.operationalKeypair = &ephemeralKey;
+            nodeId, fabricId, mCommissionerStorage.GetCommissionerCATs(), *ephemeralKey, rcacSpan, icacSpan, nocSpan));
+        commissionerParams.operationalKeypair = ephemeralKey;
         commissionerParams.controllerRCAC     = rcacSpan;
         commissionerParams.controllerICAC     = icacSpan;
         commissionerParams.controllerNOC      = nocSpan;

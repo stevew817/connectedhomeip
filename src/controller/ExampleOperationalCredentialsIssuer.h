@@ -52,7 +52,9 @@ public:
     //
     // It is recommended that this index track the fabric index within which this issuer is operating.
     //
-    ExampleOperationalCredentialsIssuer(uint32_t index = 0) { mIndex = index; }
+    ExampleOperationalCredentialsIssuer(uint32_t index = 0) : mIssuer(Crypto::SupportedECPKeyUsage::ECDSA, Crypto::SupportedECPKeyLifetime::LONGLIVED_INTERNAL),
+                                                              mIntermediateIssuer(Crypto::SupportedECPKeyUsage::ECDSA, Crypto::SupportedECPKeyLifetime::LONGLIVED_INTERNAL)
+     { mIndex = index; }
     ~ExampleOperationalCredentialsIssuer() override {}
 
     CHIP_ERROR GenerateNOCChain(const ByteSpan & csrElements, const ByteSpan & csrNonce, const ByteSpan & attestationSignature,

@@ -141,9 +141,9 @@ CHIP_ERROR InitCredentialSets()
 
     ReturnErrorOnFailure(opKeysToImport.SetLength(sTestCert_Node01_02_PublicKey_Len + sTestCert_Node01_02_PrivateKey_Len));
 
-    P256Keypair opKey;
-    ReturnErrorOnFailure(opKey.Import(opKeysToImport));
-    ReturnErrorOnFailure(commissionerFabric.SetOperationalKeypair(&opKey));
+    std::unique_ptr<P256Keypair> opKey = ConstructP256Keypair(ECPKeypairRoles::UNDEFINED, -1);
+    ReturnErrorOnFailure(opKey->Import(opKeysToImport));
+    ReturnErrorOnFailure(commissionerFabric.SetOperationalKeypair(opKey));
 
     ReturnErrorOnFailure(commissionerFabric.SetRootCert(ByteSpan(sTestCert_Root01_Chip, sTestCert_Root01_Chip_Len)));
     ReturnErrorOnFailure(commissionerFabric.SetICACert(ByteSpan(sTestCert_ICA01_Chip, sTestCert_ICA01_Chip_Len)));
@@ -166,8 +166,8 @@ CHIP_ERROR InitCredentialSets()
 
     ReturnErrorOnFailure(opKeysToImport.SetLength(sTestCert_Node01_01_PublicKey_Len + sTestCert_Node01_01_PrivateKey_Len));
 
-    ReturnErrorOnFailure(opKey.Import(opKeysToImport));
-    ReturnErrorOnFailure(deviceFabric.SetOperationalKeypair(&opKey));
+    ReturnErrorOnFailure(opKey->Import(opKeysToImport));
+    ReturnErrorOnFailure(deviceFabric.SetOperationalKeypair(opKey));
 
     ReturnErrorOnFailure(deviceFabric.SetRootCert(ByteSpan(sTestCert_Root01_Chip, sTestCert_Root01_Chip_Len)));
     ReturnErrorOnFailure(deviceFabric.SetICACert(ByteSpan(sTestCert_ICA01_Chip, sTestCert_ICA01_Chip_Len)));

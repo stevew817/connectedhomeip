@@ -155,8 +155,8 @@ CHIP_ERROR InitCommissioner(uint16_t commissionerPort, uint16_t udcListenPort)
     VerifyOrReturnError(rcac.Alloc(Controller::kMaxCHIPDERCertLength), CHIP_ERROR_NO_MEMORY);
     MutableByteSpan rcacSpan(rcac.Get(), Controller::kMaxCHIPDERCertLength);
 
-    Crypto::P256Keypair ephemeralKey;
-    ReturnErrorOnFailure(ephemeralKey.Initialize());
+    std::unique_ptr<Crypto::P256Keypair> ephemeralKey = ConstructP256Keypair(Crypto::ECPKeypairRoles::COMMISSIONER_KEY, -1);
+    ReturnErrorOnFailure(ephemeralKey->Initialize());
 
     ReturnErrorOnFailure(gOpCredsIssuer.GenerateNOCChainAfterValidation(gLocalId, /* fabricId = */ 1, chip::kUndefinedCATs,
                                                                         ephemeralKey.Pubkey(), rcacSpan, icacSpan, nocSpan));

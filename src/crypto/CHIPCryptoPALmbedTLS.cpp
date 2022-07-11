@@ -1331,6 +1331,13 @@ void ClearSecretData(uint8_t * buf, size_t len)
     mbedtls_platform_zeroize(buf, len);
 }
 
+#if !defined(CHIP_CRYPTO_USE_PLATFORM_KEYPAIRS)
+std::unique_ptr<P256Keypair> ConstructP256Keypair(ECPKeypairRoles role, int discriminator)
+{
+    return std::make_unique<P256Keypair>(role, discriminator);
+}
+#endif
+
 CHIP_ERROR P256Keypair::Initialize()
 {
 #if defined(CHIP_CRYPTO_USE_PSA_API_FOR_ECC)

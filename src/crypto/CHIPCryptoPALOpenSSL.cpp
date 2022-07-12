@@ -1129,6 +1129,8 @@ CHIP_ERROR P256Keypair::NewCertificateSigningRequest(uint8_t * out_csr, size_t &
     int result           = 0;
     int csr_length_local = 0;
 
+    VerifyOrExit(mUsage == SupportedECKeyUsages::SIGNING, error = CHIP_ERROR_WRONG_KEY_TYPE);
+
     X509_REQ * x509_req = X509_REQ_new();
     EVP_PKEY * evp_pkey = nullptr;
 

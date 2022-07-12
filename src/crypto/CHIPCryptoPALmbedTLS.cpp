@@ -49,6 +49,12 @@ using chip::Platform::MemoryFree;
 #include <mbedtls/pkcs5.h>
 #endif
 
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_HKDF)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_HKDF
+#else
+#include <mbedtls/hkdf.h>
+#endif
+
 #include <mbedtls/bignum.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/ecdh.h>
@@ -56,7 +62,6 @@ using chip::Platform::MemoryFree;
 #include <mbedtls/ecp.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
-#include <mbedtls/hkdf.h>
 #include <mbedtls/md.h>
 #include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
@@ -514,6 +519,39 @@ CHIP_ERROR HKDF_sha::HKDF_SHA256(const uint8_t * secret, const size_t secret_len
     VerifyOrReturnError(out_length > 0, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_HKDF)
+    CHIP_ERROR error = CHIP_NO_ERROR;
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
+
+    psa_crypto_init();
+
+    status = psa_key_derivation_setup(&operation, PSA_ALG_HKDF(PSA_ALG_SHA_256));
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    if (salt_length > 0)
+    {
+        status = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_SALT,
+                                                Uint8::to_const_uchar(salt), salt_length);
+        VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+    }
+
+    status = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_SECRET,
+                                            Uint8::to_const_uchar(secret), secret_length);
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    status = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_INFO,
+                                            Uint8::to_const_uchar(info), info_length);
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+
+    status = psa_key_derivation_output_bytes(&operation,
+                                             out_buffer, out_length);
+    VerifyOrExit(status == PSA_SUCCESS, error = CHIP_ERROR_INTERNAL);
+exit:
+    psa_key_derivation_abort(&operation);
+
+    return error;
+#else
     const mbedtls_md_info_t * const md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     VerifyOrReturnError(md != nullptr, CHIP_ERROR_INTERNAL);
 
@@ -523,6 +561,7 @@ CHIP_ERROR HKDF_sha::HKDF_SHA256(const uint8_t * secret, const size_t secret_len
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
 
     return CHIP_NO_ERROR;
+#endif
 }
 
 CHIP_ERROR HMAC_sha::HMAC_SHA256(const uint8_t * key, size_t key_length, const uint8_t * message, size_t message_length,

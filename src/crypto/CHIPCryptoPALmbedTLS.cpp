@@ -55,6 +55,18 @@ using chip::Platform::MemoryFree;
 #include <mbedtls/hkdf.h>
 #endif
 
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_1)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_SHA_1
+#else
+#include <mbedtls/sha1.h>
+#endif
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(PSA_WANT_ALG_SHA_256)
+#define CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256
+#else
+#include <mbedtls/sha256.h>
+#endif
+
 #include <mbedtls/bignum.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/ecdh.h>
@@ -63,8 +75,6 @@ using chip::Platform::MemoryFree;
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
 #include <mbedtls/md.h>
-#include <mbedtls/sha1.h>
-#include <mbedtls/sha256.h>
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
 #include <mbedtls/x509_crt.h>
 #endif // defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -383,6 +393,19 @@ CHIP_ERROR Hash_SHA256(const uint8_t * data, const size_t data_length, uint8_t *
     VerifyOrReturnError(data != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
+#if !defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    size_t output_length = 0;
+
+    psa_crypto_init();
+
+    const psa_status_t result = psa_hash_compute(PSA_ALG_SHA_256,
+                                                 data, data_length,
+                                                 out_buffer, PSA_HASH_LENGTH(PSA_ALG_SHA_256),
+                                                 &output_length);
+
+    VerifyOrReturnError(result == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+    VerifyOrReturnError(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), CHIP_ERROR_INTERNAL);
+#else
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
     const int result = mbedtls_sha256(Uint8::to_const_uchar(data), data_length, Uint8::to_uchar(out_buffer), 0);
 #else
@@ -390,7 +413,7 @@ CHIP_ERROR Hash_SHA256(const uint8_t * data, const size_t data_length, uint8_t *
 #endif
 
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
-
+#endif
     return CHIP_NO_ERROR;
 }
 
@@ -399,6 +422,18 @@ CHIP_ERROR Hash_SHA1(const uint8_t * data, const size_t data_length, uint8_t * o
     // zero data length hash is supported.
     VerifyOrReturnError(out_buffer != nullptr, CHIP_ERROR_INVALID_ARGUMENT);
 
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_1)
+    size_t output_length = 0;
+    psa_crypto_init();
+
+    const psa_status_t result = psa_hash_compute(PSA_ALG_SHA_1,
+                                                 data, data_length,
+                                                 out_buffer, PSA_HASH_LENGTH(PSA_ALG_SHA_1),
+                                                 &output_length);
+
+    VerifyOrReturnError(result == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+    VerifyOrReturnError(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_1), CHIP_ERROR_INTERNAL);
+#else
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
     const int result = mbedtls_sha1(Uint8::to_const_uchar(data), data_length, Uint8::to_uchar(out_buffer));
 #else
@@ -406,10 +441,19 @@ CHIP_ERROR Hash_SHA1(const uint8_t * data, const size_t data_length, uint8_t * o
 #endif
 
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
-
+#endif
     return CHIP_NO_ERROR;
 }
 
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+static_assert(kMAX_Hash_SHA256_Context_Size >= sizeof(psa_hash_operation_t),
+              "kMAX_Hash_SHA256_Context_Size is too small for the size of underlying psa_hash_operation_t");
+
+static inline psa_hash_operation_t * to_inner_hash_sha256_context(HashSHA256OpaqueContext * context)
+{
+    return SafePointerCast<psa_hash_operation_t *>(context);
+}
+#else
 static_assert(kMAX_Hash_SHA256_Context_Size >= sizeof(mbedtls_sha256_context),
               "kMAX_Hash_SHA256_Context_Size is too small for the size of underlying mbedtls_sha256_context");
 
@@ -417,22 +461,41 @@ static inline mbedtls_sha256_context * to_inner_hash_sha256_context(HashSHA256Op
 {
     return SafePointerCast<mbedtls_sha256_context *>(context);
 }
+#endif
 
 Hash_SHA256_stream::Hash_SHA256_stream(void)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    *context = psa_hash_operation_init();
+#else
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
     mbedtls_sha256_init(context);
+#endif
 }
 
 Hash_SHA256_stream::~Hash_SHA256_stream(void)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    psa_hash_abort(context);
+#else
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
     mbedtls_sha256_free(context);
+#endif
     Clear();
 }
 
 CHIP_ERROR Hash_SHA256_stream::Begin(void)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_crypto_init();
+
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    const psa_status_t result = psa_hash_setup(context, PSA_ALG_SHA_256);
+
+    VerifyOrReturnError(result == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+#else
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
@@ -442,12 +505,18 @@ CHIP_ERROR Hash_SHA256_stream::Begin(void)
 #endif
 
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
-
+#endif
     return CHIP_NO_ERROR;
 }
 
 CHIP_ERROR Hash_SHA256_stream::AddData(const ByteSpan data)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    const psa_status_t result = psa_hash_update(context, Uint8::to_const_uchar(data.data()), data.size());
+
+    VerifyOrReturnError(result == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+#else
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
@@ -457,12 +526,38 @@ CHIP_ERROR Hash_SHA256_stream::AddData(const ByteSpan data)
 #endif
 
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
-
+#endif
     return CHIP_NO_ERROR;
 }
 
 CHIP_ERROR Hash_SHA256_stream::GetDigest(MutableByteSpan & out_buffer)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    CHIP_ERROR result = CHIP_NO_ERROR;
+    psa_status_t status = PSA_ERROR_BAD_STATE;
+    size_t output_length = 0;
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+
+    VerifyOrReturnError(out_buffer.size() >= PSA_HASH_LENGTH(PSA_ALG_SHA_256), CHIP_ERROR_BUFFER_TOO_SMALL);
+
+    // Clone the context first since calculating the digest finishes the operation
+    psa_hash_operation_t digest_context = PSA_HASH_OPERATION_INIT;
+    status = psa_hash_clone(context, &digest_context);
+
+    VerifyOrReturnError(status == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+
+    // Calculate digest on the cloned context
+    status = psa_hash_finish(&digest_context,
+                             Uint8::to_uchar(out_buffer.data()),
+                             PSA_HASH_LENGTH(PSA_ALG_SHA_256),
+                             &output_length);
+
+    VerifyOrExit(status == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+    VerifyOrExit(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), CHIP_ERROR_INTERNAL);
+exit:
+    psa_hash_abort(&digest_context);
+    return result;
+#else
     mbedtls_sha256_context * context = to_inner_hash_sha256_context(&mContext);
 
     // Back-up context as we are about to finalize the hash to extract digest.
@@ -478,10 +573,23 @@ CHIP_ERROR Hash_SHA256_stream::GetDigest(MutableByteSpan & out_buffer)
     mbedtls_sha256_free(&previous_ctx);
 
     return result;
+#endif
 }
 
 CHIP_ERROR Hash_SHA256_stream::Finish(MutableByteSpan & out_buffer)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    size_t output_length = 0;
+
+    const psa_status_t status = psa_hash_finish(context,
+                                                Uint8::to_uchar(out_buffer.data()),
+                                                PSA_HASH_LENGTH(PSA_ALG_SHA_256),
+                                                &output_length);
+
+    VerifyOrReturnError(status == PSA_SUCCESS, CHIP_ERROR_INTERNAL);
+    VerifyOrReturnError(output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256), CHIP_ERROR_INTERNAL);
+#else
     VerifyOrReturnError(out_buffer.size() >= kSHA256_Hash_Length, CHIP_ERROR_BUFFER_TOO_SMALL);
     mbedtls_sha256_context * const context = to_inner_hash_sha256_context(&mContext);
 
@@ -493,13 +601,19 @@ CHIP_ERROR Hash_SHA256_stream::Finish(MutableByteSpan & out_buffer)
 
     VerifyOrReturnError(result == 0, CHIP_ERROR_INTERNAL);
     out_buffer = out_buffer.SubSpan(0, kSHA256_Hash_Length);
+#endif
 
     return CHIP_NO_ERROR;
 }
 
 void Hash_SHA256_stream::Clear(void)
 {
+#if defined(CHIP_CRYPTO_USE_PSA_API_FOR_SHA_256)
+    psa_hash_operation_t * context = to_inner_hash_sha256_context(&mContext);
+    psa_hash_abort(context);
+#else
     mbedtls_platform_zeroize(this, sizeof(*this));
+#endif
 }
 
 CHIP_ERROR HKDF_sha::HKDF_SHA256(const uint8_t * secret, const size_t secret_length, const uint8_t * salt, const size_t salt_length,

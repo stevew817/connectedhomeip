@@ -48,6 +48,23 @@ extern "C" {
 #include <mbedtls/bignum.h>
 #include <mbedtls/ecp.h>
 
+// Includes needed for hardware-specific optimisations
+extern "C" {
+#include "em_device.h"
+}
+
+#if defined(SEMAILBOX_PRESENT)
+// Add inlined optimisation which can use the SE to do point multiplication operations using
+// the ECDH primitive as a proxy for scalar multiplication.
+extern "C" {
+#include "sl_se_manager.h"
+#include "sl_se_manager_key_derivation.h"
+#include "sl_se_manager_util.h"
+#include "sli_se_driver_key_management.h"
+#include "sli_se_manager_internal.h"
+}
+#endif /* SEMAILBOX_PRESENT */
+
 // Includes needed for certificate parsing
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
 #include <mbedtls/x509_crt.h>
@@ -482,6 +499,41 @@ exit:
 CHIP_ERROR PBKDF2_sha256::pbkdf2_sha256(const uint8_t * password, size_t plen, const uint8_t * salt, size_t slen,
                                         unsigned int iteration_count, uint32_t key_length, uint8_t * output)
 {
+#if defined(SEMAILBOX_PRESENT) \
+    && (_SILICON_LABS_SECURITY_FEATURE == _SILICON_LABS_SECURITY_FEATURE_VAULT)
+    // Create input/output key descriptor and populate them
+    sl_se_key_descriptor_t key_in_desc = { 0 };
+    sl_se_key_descriptor_t key_out_desc = { 0 };
+
+    key_in_desc.type = SL_SE_KEY_TYPE_SYMMETRIC;
+    key_in_desc.size = plen;
+    sli_se_key_descriptor_set_plaintext(&key_in_desc, password, plen);
+
+    key_out_desc.type = SL_SE_KEY_TYPE_SYMMETRIC;
+    key_out_desc.size = key_length;
+    sli_se_key_descriptor_set_plaintext(&key_out_desc, output, key_length);
+
+    // Prepare SE command context.
+    sl_se_command_context_t cmd_ctx = { 0 };
+    sl_status_t sl_status = sl_se_init_command_context(&cmd_ctx);
+    if (sl_status != SL_STATUS_OK) {
+        return CHIP_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Execute the SE command.
+    sl_status = sl_se_derive_key_pbkdf2(&cmd_ctx,
+                                        &key_in_desc,
+                                        SL_SE_PRF_HMAC_SHA256,
+                                        salt,
+                                        slen,
+                                        iteration_count,
+                                        &key_out_desc);
+    if (sl_status != SL_STATUS_OK) {
+        return CHIP_ERROR_INTERNAL;
+    }
+
+    return CHIP_NO_ERROR;
+#else /* SEMAILBOX_PRESENT && FEATURE == VAULT */
     // TODO: replace inlined algorithm with usage of the PSA key derivation API once implemented
     CHIP_ERROR error          = CHIP_NO_ERROR;
     psa_status_t status       = PSA_ERROR_BAD_STATE;
@@ -575,6 +627,7 @@ exit:
     MemoryFree(U1);
     psa_reset_key_attributes(&attr);
     return error;
+#endif /* SEMAILBOX_PRESENT && FEATURE == VAULT */
 }
 
 CHIP_ERROR add_entropy_source(entropy_source fn_source, void * p_source, size_t threshold)
@@ -1206,22 +1259,6 @@ CHIP_ERROR Spake2p_P256_SHA256_HKDF_HMAC::PointWrite(const void * R, uint8_t * o
 
     return CHIP_NO_ERROR;
 }
-
-extern "C" {
-#include "em_device.h"
-}
-
-#if defined(SEMAILBOX_PRESENT)
-// Add inlined optimisation which can use the SE to do point multiplication operations using
-// the ECDH primitive as a proxy for scalar multiplication.
-extern "C" {
-#include "sl_se_manager.h"
-#include "sl_se_manager_key_derivation.h"
-#include "sl_se_manager_util.h"
-#include "sli_se_driver_key_management.h"
-#include "sli_se_manager_internal.h"
-}
-#endif /* SEMAILBOX_PRESENT */
 
 CHIP_ERROR Spake2p_P256_SHA256_HKDF_HMAC::PointMul(void * R, const void * P1, const void * fe1)
 {
